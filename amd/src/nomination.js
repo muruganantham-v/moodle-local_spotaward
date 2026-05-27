@@ -38,28 +38,23 @@ define([], function() {
             var bypass = false;
 
             function getCategoryStatus() {
-                var fieldMapEl = document.getElementById('id_awardfieldmap');
+                /* hidden inputs may not have id= in some Moodle versions */
+                var fieldMapEl = document.getElementById('id_awardfieldmap')
+                    || form.querySelector('input[name="awardfieldmap"]')
+                    || document.querySelector('input[name="awardfieldmap"]');
                 var fieldMap = {};
                 if (fieldMapEl && fieldMapEl.value) {
                     try {
                         fieldMap = JSON.parse(fieldMapEl.value);
                     } catch (e) {}
                 }
-                var categorySelects = form.querySelectorAll('select[name^="awardstudents_"]');
-                if (!Object.keys(fieldMap).length && categorySelects.length) {
-                    for (var s = 0; s < categorySelects.length; s++) {
-                        var sel = categorySelects[s];
-                        var label = form.querySelector('label[for="' + sel.id + '"]');
-                        if (label) {
-                            fieldMap[sel.name] = label.textContent.trim();
-                        }
-                    }
-                }
                 var categories = [];
                 var fieldNames = Object.keys(fieldMap);
                 for (var f = 0; f < fieldNames.length; f++) {
                     var fieldName = fieldNames[f];
-                    var select = form.querySelector('[name="' + fieldName + '"]');
+                    /* selects are now named fieldname[] for PHP array submission */
+                    var select = form.querySelector('[name="' + fieldName + '[]"]')
+                        || form.querySelector('[name="' + fieldName + '"]');
                     var count = 0;
                     if (select) {
                         for (var i = 0; i < select.options.length; i++) {
