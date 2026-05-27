@@ -25,6 +25,12 @@ final class api {
      */
     private const DRAFTSESSIONKEY = 'local_spotaward_draft_entries';
 
+    /** @var array Request-level cache for get_nomination(). */
+    private static $nominationcache = [];
+
+    /** @var array Request-level cache for get_nomination_items(). */
+    private static $nominationitemscache = [];
+
     /**
      * Whether user can see plugin entry point.
      *
@@ -1515,11 +1521,10 @@ final class api {
      */
     public static function get_nomination(int $nominationid): stdClass {
         global $DB;
-        static $cache = [];
-        if (!isset($cache[$nominationid])) {
-            $cache[$nominationid] = $DB->get_record('spotaward_nominations', ['id' => $nominationid], '*', MUST_EXIST);
+        if (!isset(self::$nominationcache[$nominationid])) {
+            self::$nominationcache[$nominationid] = $DB->get_record('spotaward_nominations', ['id' => $nominationid], '*', MUST_EXIST);
         }
-        return $cache[$nominationid];
+        return self::$nominationcache[$nominationid];
     }
 
     /**
@@ -1530,8 +1535,7 @@ final class api {
      */
     public static function get_nomination_items(int $nominationid): array {
         global $DB;
-        static $cache = [];
-        if (!isset($cache[$nominationid])) {
+        if (!isset(self::$nominationitemscache[$nominationid])) {
             $sql = "SELECT ni.*,
                              u.firstname, u.lastname, u.firstnamephonetic, u.lastnamephonetic,
                              u.middlename, u.alternatename, u.email, u.username
@@ -1539,9 +1543,9 @@ final class api {
                       JOIN {user} u ON u.id = ni.studentid
                      WHERE ni.nominationid = :nominationid
                   ORDER BY u.firstname ASC, u.lastname ASC";
-            $cache[$nominationid] = array_values($DB->get_records_sql($sql, ['nominationid' => $nominationid]));
+            self::$nominationitemscache[$nominationid] = array_values($DB->get_records_sql($sql, ['nominationid' => $nominationid]));
         }
-        return $cache[$nominationid];
+        return self::$nominationitemscache[$nominationid];
     }
 
 
@@ -4477,9 +4481,7 @@ final class api {
         $nomination = self::get_nomination($nominationid);
         $oldstatus = $nomination->status;
 
-        // Bypass the static cache in get_nomination_items() — we need the current DB state
-        // because this is called immediately after update_item_status() writes to the DB.
-        $items = $DB->get_records('spotaward_nomination_items', ['nominationid' => $nominationid]);
+        $items = self::get_nomination_items($nominationid);
 
         $haspending = false;
         $hasssteamprogress = false;
@@ -4523,6 +4525,7 @@ final class api {
             'status' => $newstatus,
             'timemodified' => time(),
         ]);
+        unset(self::$nominationcache[$nominationid]);
 
         if ($oldstatus !== $newstatus) {
             if ($newstatus === 'ssteamprogress') {
@@ -4665,6 +4668,11 @@ final class api {
         $item->reviewedby = $actorid;
         $item->timereviewed = time();
         $DB->update_record('spotaward_nomination_items', $item);
+
+        // Bust caches so refresh_nomination_status() and any downstream callers
+        // (e.g. ensure_nomination_certificates_generated) read the updated DB state.
+        unset(self::$nominationitemscache[$item->nominationid]);
+        unset(self::$nominationcache[$item->nominationid]);
 
         $DB->insert_record('spotaward_status_track', (object)[
             'nominationid' => $item->nominationid,
