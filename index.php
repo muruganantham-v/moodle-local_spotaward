@@ -208,7 +208,7 @@ if ($isnominator) {
         if (optional_param('submitnominations', '', PARAM_RAW) !== '') {
             require_sesskey();
             $currentdata = (object)[
-                'courseid' => optional_param('courseid', 0, PARAM_INT),
+                'courseid' => optional_param('courseid', 0, PARAM_INT) ?: optional_param('coursepicker', 0, PARAM_INT),
                 'modulename' => optional_param('modulename', '', PARAM_TEXT),
                 'awardpayload' => local_spotaward_build_awardpayload_from_request(),
                 'professional' => optional_param('professional', '', PARAM_TEXT),
@@ -240,7 +240,7 @@ if ($isnominator) {
         if (optional_param('previewdraft', '', PARAM_RAW) !== '') {
             require_sesskey();
             $previewdata = (object)[
-                'courseid' => optional_param('courseid', 0, PARAM_INT),
+                'courseid' => optional_param('courseid', 0, PARAM_INT) ?: optional_param('coursepicker', 0, PARAM_INT),
                 'modulename' => optional_param('modulename', '', PARAM_TEXT),
                 'awardpayload' => local_spotaward_build_awardpayload_from_request(),
                 'professional' => optional_param('professional', '', PARAM_TEXT),

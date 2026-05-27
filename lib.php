@@ -534,14 +534,20 @@ function local_spotaward_nomination_form_js(moodle_url $ajaxurl): string {
        INIT
     ===================================================================== */
     var coursePicker = document.getElementById('id_coursepicker');
-    var hiddenCourseEl = document.getElementById('id_courseid');
-    var courseNative = coursePicker || hiddenCourseEl;
+    var courseNative = coursePicker;
+    /* Moodle may omit id= on hidden inputs, so fall back to name-based lookup */
+    var nominationForm = coursePicker ? coursePicker.form : null;
+    function findByNameOrId(id, name) {
+        return document.getElementById(id)
+            || (nominationForm ? nominationForm.querySelector('[name="' + name + '"]') : null)
+            || document.querySelector('[name="' + name + '"]');
+    }
+    var hiddenCourseEl = findByNameOrId('id_courseid', 'courseid');
     var professionalEl = document.getElementById('id_professional');
     var programManagerEl = document.getElementById('id_programmanagerid');
     var maacExecutiveEl = document.getElementById('id_maacexecutiveid');
-    var moduleEl = document.getElementById('id_modulename');
-    var awardFieldMapEl = document.getElementById('id_awardfieldmap');
-    var nominationForm = hiddenCourseEl ? hiddenCourseEl.form : null;
+    var moduleEl = findByNameOrId('id_modulename', 'modulename');
+    var awardFieldMapEl = findByNameOrId('id_awardfieldmap', 'awardfieldmap');
     var courseModuleMap = $coursemodulemap || {};
 
     if (!courseNative) return;
@@ -717,6 +723,10 @@ function local_spotaward_nomination_form_js(moodle_url $ajaxurl): string {
         if (!courseid || courseid === '0') {
             if (pmWidget) pmWidget.setItems([]);
             if (maacWidget) maacWidget.setItems([]);
+            var pmWarn0 = document.getElementById('spotaward-pm-noassign');
+            if (pmWarn0) pmWarn0.style.display = 'none';
+            var maacWarn0 = document.getElementById('spotaward-maac-noassign');
+            if (maacWarn0) maacWarn0.style.display = 'none';
             buildAwardFields([], []);
             if (onLoaded) onLoaded(null);
             return;
@@ -746,8 +756,21 @@ function local_spotaward_nomination_form_js(moodle_url $ajaxurl): string {
                 return { value: m.id, label: m.name };
             });
 
-            if (pmWidget) { pmWidget.setLoading(false); pmWidget.setItems(pmItems); }
-            if (maacWidget) { maacWidget.setLoading(false); maacWidget.setItems(maacItems); }
+            if (pmWidget) {
+                pmWidget.setLoading(false);
+                pmWidget.setItems(pmItems);
+                if (pmItems.length === 1) pmWidget.setSelectedValues([String(pmItems[0].value)]);
+            }
+            var pmWarn = document.getElementById('spotaward-pm-noassign');
+            if (pmWarn) pmWarn.style.display = pmItems.length === 0 ? '' : 'none';
+
+            if (maacWidget) {
+                maacWidget.setLoading(false);
+                maacWidget.setItems(maacItems);
+                if (maacItems.length === 1) maacWidget.setSelectedValues([String(maacItems[0].value)]);
+            }
+            var maacWarn = document.getElementById('spotaward-maac-noassign');
+            if (maacWarn) maacWarn.style.display = maacItems.length === 0 ? '' : 'none';
 
             buildAwardFields(data.categories || [], data.students || []);
             if (onLoaded) onLoaded(data);

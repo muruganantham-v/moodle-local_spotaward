@@ -73,6 +73,9 @@ final class nomination_form extends moodleform {
             $mform->setDefault('programmanagerid', (int)$selectedprogrammanagerid);
         }
         $mform->addHelpButton('programmanagerid', 'pmoverridehelp', 'local_spotaward');
+        $mform->addElement('html',
+            '<div id="spotaward-pm-noassign" class="alert alert-warning mt-1" style="display:none;">' .
+            s(get_string('noprogrammanagerassigned', 'local_spotaward')) . '</div>');
         if (!empty($fielderrors['programmanagerid'])) {
             $mform->addElement('html',
                 '<div class="spotaward-field-error-text">' . s($fielderrors['programmanagerid']) . '</div>');
@@ -97,6 +100,9 @@ final class nomination_form extends moodleform {
             $mform->setDefault('maacexecutiveid', (int)$selectedmaacexecutiveid);
         }
         $mform->addHelpButton('maacexecutiveid', 'maacoverridehelp', 'local_spotaward');
+        $mform->addElement('html',
+            '<div id="spotaward-maac-noassign" class="alert alert-warning mt-1" style="display:none;">' .
+            s(get_string('nomaacexecutiveassigned', 'local_spotaward')) . '</div>');
         if (!empty($fielderrors['maacexecutiveid'])) {
             $mform->addElement('html',
                 '<div class="spotaward-field-error-text">' . s($fielderrors['maacexecutiveid']) . '</div>');
