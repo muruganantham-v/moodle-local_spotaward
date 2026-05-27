@@ -694,7 +694,7 @@ function local_spotaward_nomination_form_js(moodle_url $ajaxurl): string {
             label.className = 'col-form-label d-block mt-2';
 
             var sel = document.createElement('select');
-            sel.name = fieldname;
+            sel.name = fieldname + '[]';
             sel.multiple = true;
             sel.size = 8;
             sel.className = 'spotaward-award-students';
