@@ -21,17 +21,13 @@ final class nomination_form extends moodleform {
         $mform = $this->_form;
         $mform->disable_form_change_checker();
         $courseoptions = $this->_customdata['courseoptions'] ?? [];
-        $studentoptions = $this->_customdata['studentoptions'] ?? [];
         $programmanageroptions = $this->_customdata['programmanageroptions'] ?? [];
         $maacexecutiveoptions = $this->_customdata['maacexecutiveoptions'] ?? [];
         $selectedprogrammanagerid = $this->_customdata['selectedprogrammanagerid'] ?? 0;
         $selectedmaacexecutiveid = $this->_customdata['selectedmaacexecutiveid'] ?? 0;
         $selectedcourseid = $this->_customdata['selectedcourseid'] ?? 0;
-        $selectedcoursename = $this->_customdata['selectedcoursename'] ?? '';
-        $selectedcourseshortname = $this->_customdata['selectedcourseshortname'] ?? '';
         $hasdraftentries = !empty($this->_customdata['hasdraftentries']);
         $draftcontext = $this->_customdata['draftcontext'] ?? [];
-        $coursedataset = $this->_customdata['coursedataset'] ?? [];
         $fielderrors = $this->_customdata['fielderrors'] ?? [];
 
         $mform->addElement('html', '<div class="spotaward-form-section"><div class="spotaward-form-section-header">Course Details</div><div class="spotaward-form-section-body">');
@@ -80,11 +76,6 @@ final class nomination_form extends moodleform {
         if (!empty($fielderrors['programmanagerid'])) {
             $mform->addElement('html',
                 '<div class="spotaward-field-error-text">' . s($fielderrors['programmanagerid']) . '</div>');
-        } else if (!empty($selectedcoursename) && empty($programmanageroptions)) {
-            $mform->addElement('html',
-                '<div class="spotaward-field-error-text">' .
-                s(get_string('programmanagercoursewarning', 'local_spotaward', $selectedcoursename)) .
-                '</div>');
         }
 
         $maacattributes = [];
@@ -109,50 +100,18 @@ final class nomination_form extends moodleform {
         if (!empty($fielderrors['maacexecutiveid'])) {
             $mform->addElement('html',
                 '<div class="spotaward-field-error-text">' . s($fielderrors['maacexecutiveid']) . '</div>');
-        } else if (!empty($selectedcoursename) && empty($maacexecutiveoptions)) {
-            $mform->addElement('html',
-                '<div class="spotaward-field-error-text">' .
-                s(get_string('maacexecutivecoursewarning', 'local_spotaward', $selectedcoursename)) .
-                '</div>');
         }
         $mform->addElement('html', '</div></div>');
 
-        $hidesection = empty($selectedcoursename) ? ' style="display:none;"' : '';
-        $mform->addElement('html', '<div class="spotaward-form-section"' . $hidesection . ' id="spotaward-award-section"><div class="spotaward-form-section-header">Award Categories</div><div class="spotaward-form-section-body">');
+        $mform->addElement('html', '<div class="spotaward-form-section" style="display:none;" id="spotaward-award-section"><div class="spotaward-form-section-header">Award Categories</div><div class="spotaward-form-section-body">');
 
-        $awardfieldmap = [];
         $mform->addElement('hidden', 'awardfieldmap', '');
         $mform->setType('awardfieldmap', PARAM_RAW_TRIMMED);
-        $awardcategories = [];
-        if (!empty($selectedcoursename)) {
-            $awardcategories = array_values(constants::award_categories_for_course($selectedcourseshortname, $selectedcoursename));
-        }
-
-        if (!empty($awardcategories)) {
-            foreach ($awardcategories as $index => $category) {
-                $fieldname = 'awardstudents_' . $index;
-                $awardfieldmap[$fieldname] = $category;
-                $attributes = [
-                    'multiple' => 'multiple',
-                    'size' => 8,
-                    'class' => 'spotaward-award-students',
-                ];
-                $mform->addElement('select', $fieldname, $category, $studentoptions, $attributes);
-                $mform->setType($fieldname, PARAM_INT);
-                if (!empty($draftcontext['awardallocations'][$category])) {
-                    $mform->setDefault($fieldname, array_map('intval', (array)$draftcontext['awardallocations'][$category]));
-                }
-            }
-        } else {
-            $mform->addElement('static', 'awardcategoriesui', '', '');
-            $mform->addElement('html', '<div id="spotaward-award-fields"></div>');
-        }
-        $mform->setDefault('awardfieldmap', json_encode($awardfieldmap));
+        $mform->addElement('static', 'awardcategoriesui', '', '');
+        $mform->addElement('html', '<div id="spotaward-award-fields"></div>');
         $mform->addElement('html', '</div></div>');
 
-        $formattrs = [
-            'data-course-dataset' => rawurlencode(json_encode($coursedataset)),
-        ];
+        $formattrs = [];
         if ($hasdraftentries) {
             $formattrs['data-has-draft-lock'] = '1';
             $formattrs['data-draft-courseid'] = (string)($draftcontext['courseid'] ?? 0);

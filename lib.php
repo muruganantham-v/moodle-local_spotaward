@@ -509,10 +509,23 @@ function local_spotaward_nomination_form_js(moodle_url $ajaxurl): string {
             }
         }
 
+        function setSelectedValues(values) {
+            selected = [];
+            var vals = values.map(function(v) { return String(v); });
+            for (var i = 0; i < allItems.length; i++) {
+                if (vals.indexOf(String(allItems[i].value)) !== -1) {
+                    selected.push(allItems[i]);
+                }
+            }
+            renderChips();
+            syncNative();
+        }
+
         return {
             setItems: setItems,
             setLoading: setLoading,
             setLocked: setLocked,
+            setSelectedValues: setSelectedValues,
             getNativeSelect: function () { return nativeSelect; }
         };
     }
@@ -624,13 +637,17 @@ function local_spotaward_nomination_form_js(moodle_url $ajaxurl): string {
         }
     }
 
+    var pmWidget = null;
+    var maacWidget = null;
+    var awardWidgets = {};
+
     function enhanceProgramManagerPicker() {
         if (!programManagerEl || programManagerEl.getAttribute('data-sa-enhanced') === '1') {
             return;
         }
 
         programManagerEl.setAttribute('data-sa-enhanced', '1');
-        makeWidget(programManagerEl, {
+        pmWidget = makeWidget(programManagerEl, {
             multiple: false,
             placeholder: '$strSelPm'
         });
@@ -642,10 +659,105 @@ function local_spotaward_nomination_form_js(moodle_url $ajaxurl): string {
         }
 
         maacExecutiveEl.setAttribute('data-sa-enhanced', '1');
-        makeWidget(maacExecutiveEl, {
+        maacWidget = makeWidget(maacExecutiveEl, {
             multiple: false,
             placeholder: maacExecutiveEl.getAttribute('data-placeholder') || 'Search...'
         });
+    }
+
+    function buildAwardFields(categories, students) {
+        var container = document.getElementById('spotaward-award-fields');
+        if (!container) return;
+
+        /* remove previously built fields */
+        Object.keys(awardWidgets).forEach(function(fn) {
+            var old = nominationForm ? nominationForm.querySelector('[name="' + fn + '"]') : null;
+            if (old && old.parentNode) old.parentNode.removeChild(old.parentNode.querySelector('.sa-wrap') || old);
+        });
+        container.innerHTML = '';
+        awardWidgets = {};
+
+        var fieldmap = {};
+
+        categories.forEach(function(category, index) {
+            var fieldname = 'awardstudents_' + index;
+            fieldmap[fieldname] = category;
+
+            var label = document.createElement('label');
+            label.textContent = category;
+            label.className = 'col-form-label d-block mt-2';
+
+            var sel = document.createElement('select');
+            sel.name = fieldname;
+            sel.multiple = true;
+            sel.size = 8;
+            sel.className = 'spotaward-award-students';
+            students.forEach(function(s) {
+                var o = document.createElement('option');
+                o.value = s.id;
+                o.text = s.name + ' (' + s.email + ')';
+                sel.add(o);
+            });
+
+            var wrap = document.createElement('div');
+            wrap.className = 'form-group row fitem';
+            wrap.appendChild(label);
+            wrap.appendChild(sel);
+            container.appendChild(wrap);
+
+            awardWidgets[fieldname] = makeWidget(sel, { multiple: true, placeholder: '$strSelStudents' });
+        });
+
+        if (awardFieldMapEl) {
+            awardFieldMapEl.value = JSON.stringify(fieldmap);
+        }
+    }
+
+    function fetchCourseData(courseid, onLoaded) {
+        if (!courseid || courseid === '0') {
+            if (pmWidget) pmWidget.setItems([]);
+            if (maacWidget) maacWidget.setItems([]);
+            buildAwardFields([], []);
+            if (onLoaded) onLoaded(null);
+            return;
+        }
+
+        var url = '$ajaxUrl' + '?courseid=' + encodeURIComponent(courseid);
+
+        if (pmWidget) pmWidget.setLoading(true);
+        if (maacWidget) maacWidget.setLoading(true);
+
+        var xhr = new XMLHttpRequest();
+        xhr.open('GET', url);
+        xhr.onload = function() {
+            var data = null;
+            try { data = JSON.parse(xhr.responseText); } catch(e) {}
+            if (!data) {
+                if (pmWidget) pmWidget.setLoading(false);
+                if (maacWidget) maacWidget.setLoading(false);
+                if (onLoaded) onLoaded(null);
+                return;
+            }
+
+            var pmItems = (data.programmanagers || []).map(function(p) {
+                return { value: p.id, label: p.name };
+            });
+            var maacItems = (data.maacexecutives || []).map(function(m) {
+                return { value: m.id, label: m.name };
+            });
+
+            if (pmWidget) { pmWidget.setLoading(false); pmWidget.setItems(pmItems); }
+            if (maacWidget) { maacWidget.setLoading(false); maacWidget.setItems(maacItems); }
+
+            buildAwardFields(data.categories || [], data.students || []);
+            if (onLoaded) onLoaded(data);
+        };
+        xhr.onerror = function() {
+            if (pmWidget) pmWidget.setLoading(false);
+            if (maacWidget) maacWidget.setLoading(false);
+            if (onLoaded) onLoaded(null);
+        };
+        xhr.send();
     }
 
     function enhanceCoursePicker() {
@@ -678,9 +790,7 @@ function local_spotaward_nomination_form_js(moodle_url $ajaxurl): string {
         coursePicker.addEventListener('change', function() {
             applyCourseSelectionState();
             toggleAwardSection();
-            var nextUrl = M.cfg.wwwroot + '/local/spotaward/index.php?view=nominator&section=form&courseid=' +
-                encodeURIComponent(String(coursePicker.value || '0'));
-            window.location.assign(nextUrl);
+            fetchCourseData(selectedCourseValue(), null);
         });
     }
 
@@ -692,7 +802,38 @@ function local_spotaward_nomination_form_js(moodle_url $ajaxurl): string {
         maacExecutiveEl.setAttribute('data-placeholder', maacExecutiveEl.options.length ? maacExecutiveEl.options[0].text : 'Search...');
     }
     enhanceMaacExecutivePicker();
-    enhanceAwardStudentSelects();
+
+    /* restore draft state via AJAX on page load */
+    var draftForm = nominationForm;
+    var hasDraft = draftForm && draftForm.getAttribute('data-has-draft-lock') === '1';
+    if (hasDraft) {
+        var draftCourseid = draftForm.getAttribute('data-draft-courseid') || '0';
+        var draftPmid = draftForm.getAttribute('data-draft-programmanagerid') || '0';
+        var draftMaacid = draftForm.getAttribute('data-draft-maacexecutiveid') || '0';
+        var draftPayloadRaw = draftForm.getAttribute('data-draft-awardpayload') || '';
+        var draftPayload = {};
+        try { draftPayload = JSON.parse(decodeURIComponent(draftPayloadRaw)); } catch(e) {}
+
+        fetchCourseData(draftCourseid, function(data) {
+            if (!data) return;
+            if (pmWidget && draftPmid !== '0') pmWidget.setSelectedValues([draftPmid]);
+            if (maacWidget && draftMaacid !== '0') maacWidget.setSelectedValues([draftMaacid]);
+            /* restore award allocations */
+            Object.keys(draftPayload).forEach(function(category) {
+                var studentids = draftPayload[category];
+                /* find which fieldname maps to this category */
+                var fieldmap = {};
+                try { fieldmap = JSON.parse(awardFieldMapEl ? awardFieldMapEl.value : '{}'); } catch(e) {}
+                Object.keys(fieldmap).forEach(function(fn) {
+                    if (fieldmap[fn] === category && awardWidgets[fn]) {
+                        awardWidgets[fn].setSelectedValues(studentids.map(String));
+                    }
+                });
+            });
+        });
+    } else {
+        enhanceAwardStudentSelects();
+    }
 
 }());
 JS;

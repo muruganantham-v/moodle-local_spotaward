@@ -43,13 +43,13 @@ if ($action === 'studentreport') {
 $courseid = required_param('courseid', PARAM_INT);
 
 if ($courseid <= 0) {
-    echo json_encode(['error' => 'Invalid course ID', 'students' => [], 'programmanagers' => []]);
+    echo json_encode(['error' => 'Invalid course ID', 'students' => [], 'programmanagers' => [], 'categories' => []]);
     die();
 }
 
 if (!api::user_can_access($USER->id)) {
     http_response_code(403);
-    echo json_encode(['error' => 'Access denied', 'students' => [], 'programmanagers' => []]);
+    echo json_encode(['error' => 'Access denied', 'students' => [], 'programmanagers' => [], 'categories' => []]);
     die();
 }
 
@@ -84,9 +84,13 @@ foreach (api::get_maac_executives_for_course($courseid) as $maac) {
     ];
 }
 
+$course = get_course($courseid);
+$categories = array_values(constants::award_categories_for_course($course->shortname, $course->fullname));
+
 echo json_encode([
     'students'        => $students,
     'programmanagers' => $programmanagers,
     'maacexecutives'  => $maacexecutives,
+    'categories'      => $categories,
 ]);
 die();

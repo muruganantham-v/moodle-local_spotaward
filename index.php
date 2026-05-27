@@ -59,39 +59,6 @@ function local_spotaward_validate_nomination_request(stdClass $data): array {
     return $errors;
 }
 
-/**
- * Get the default MAAC Executive option from a course list.
- *
- * @param array $programmanageroptions
- * @return int
- */
-function local_spotaward_default_programmanagerid(array $programmanageroptions): int {
-    foreach ($programmanageroptions as $userid => $label) {
-        $userid = (int)$userid;
-        if ($userid > 0) {
-            return $userid;
-        }
-    }
-
-    return 0;
-}
-
-/**
- * Get the default MAAC Executive option from a course list.
- *
- * @param array $maacexecutiveoptions
- * @return int
- */
-function local_spotaward_default_maacexecutiveid(array $maacexecutiveoptions): int {
-    foreach ($maacexecutiveoptions as $userid => $label) {
-        $userid = (int)$userid;
-        if ($userid > 0) {
-            return $userid;
-        }
-    }
-
-    return 0;
-}
 
 require_login();
 
@@ -219,84 +186,17 @@ if ($isnominator) {
         $selectedcourseid = $draftcontext['courseid'];
     }
 
-    $selectedcoursename = '';
-    $selectedcourseshortname = '';
-    $studentoptions = [];
-    $programmanageroptions = [];
-    $maacexecutiveoptions = [];
-    $coursedataset = [];
     $allcourseoptions = api::get_nominator_courses($USER->id);
-    foreach ($allcourseoptions as $courseid => $courselabel) {
-        $courseid = (int)$courseid;
-        if (!api::can_nominate_in_course($USER->id, $courseid)) {
-            continue;
-        }
-
-        $course = get_course($courseid);
-        $coursedataset[$courseid] = [
-            'coursename' => (string)$course->fullname,
-            'students' => [],
-            'programmanagers' => [],
-            'maacexecutives' => [],
-        ];
-
-        foreach (api::get_course_students($courseid, $USER->id) as $student) {
-            $coursedataset[$courseid]['students'][] = [
-                'value' => (int)$student->id,
-                'label' => fullname($student) . ' (' . $student->email . ')',
-            ];
-        }
-
-        foreach (api::get_program_managers_for_course($courseid) as $pm) {
-            $coursedataset[$courseid]['programmanagers'][] = [
-                'id' => (int)$pm->id,
-                'name' => fullname($pm),
-            ];
-        }
-
-        foreach (api::get_maac_executives_for_course($courseid) as $maac) {
-            $coursedataset[$courseid]['maacexecutives'][] = [
-                'id' => (int)$maac->id,
-                'name' => fullname($maac),
-            ];
-        }
-    }
-
-    if ($selectedcourseid && api::can_nominate_in_course($USER->id, $selectedcourseid)) {
-        $selectedcourse = get_course($selectedcourseid);
-        $selectedcoursename = $selectedcourse->fullname;
-        $selectedcourseshortname = $selectedcourse->shortname;
-        foreach (api::get_course_students($selectedcourseid, $USER->id) as $student) {
-            $studentoptions[$student->id] = fullname($student) . ' (' . $student->email . ')';
-        }
-        foreach (api::get_program_managers_for_course($selectedcourseid) as $pm) {
-            $programmanageroptions[$pm->id] = fullname($pm);
-        }
-        foreach (api::get_maac_executives_for_course($selectedcourseid) as $maac) {
-            $maacexecutiveoptions[$maac->id] = fullname($maac);
-        }
-    }
-
-    $selectedprogrammanagerid = !empty($draftcontext['programmanagerid'])
-        ? (int)$draftcontext['programmanagerid']
-        : local_spotaward_default_programmanagerid($programmanageroptions);
-    $selectedmaacexecutiveid = !empty($draftcontext['maacexecutiveid'])
-        ? (int)$draftcontext['maacexecutiveid']
-        : local_spotaward_default_maacexecutiveid($maacexecutiveoptions);
+    $selectedprogrammanagerid = (int)($draftcontext['programmanagerid'] ?? 0);
+    $selectedmaacexecutiveid = (int)($draftcontext['maacexecutiveid'] ?? 0);
 
         $mform = new nomination_form(null, [
             'courseoptions' => $allcourseoptions,
-            'studentoptions' => $studentoptions,
-            'programmanageroptions' => $programmanageroptions,
-            'maacexecutiveoptions' => $maacexecutiveoptions,
             'selectedprogrammanagerid' => $selectedprogrammanagerid,
             'selectedmaacexecutiveid' => $selectedmaacexecutiveid,
             'selectedcourseid' => $selectedcourseid,
-            'selectedcoursename' => $selectedcoursename,
-            'selectedcourseshortname' => $selectedcourseshortname,
             'hasdraftentries' => $hasdraftentries,
             'draftcontext' => $draftcontext,
-            'coursedataset' => $coursedataset,
             'fielderrors' => $nominationfielderrors,
         ]);
 
@@ -359,17 +259,11 @@ if ($isnominator) {
     if (!empty($nominationfielderrors)) {
         $mform = new nomination_form(null, [
             'courseoptions' => $allcourseoptions,
-            'studentoptions' => $studentoptions,
-            'programmanageroptions' => $programmanageroptions,
-            'maacexecutiveoptions' => $maacexecutiveoptions,
             'selectedprogrammanagerid' => $selectedprogrammanagerid,
             'selectedmaacexecutiveid' => $selectedmaacexecutiveid,
             'selectedcourseid' => $selectedcourseid,
-            'selectedcoursename' => $selectedcoursename,
-            'selectedcourseshortname' => $selectedcourseshortname,
             'hasdraftentries' => $hasdraftentries,
             'draftcontext' => $draftcontext,
-            'coursedataset' => $coursedataset,
             'fielderrors' => $nominationfielderrors,
         ]);
         if (!empty($previewdata ?? null)) {
