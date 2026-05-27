@@ -1544,6 +1544,7 @@ final class api {
         return $cache[$nominationid];
     }
 
+
     /**
      * Normalise selected nomination item IDs.
      *
@@ -4476,7 +4477,9 @@ final class api {
         $nomination = self::get_nomination($nominationid);
         $oldstatus = $nomination->status;
 
-        $items = self::get_nomination_items($nominationid);
+        // Bypass the static cache in get_nomination_items() — we need the current DB state
+        // because this is called immediately after update_item_status() writes to the DB.
+        $items = $DB->get_records('spotaward_nomination_items', ['nominationid' => $nominationid]);
 
         $haspending = false;
         $hasssteamprogress = false;
