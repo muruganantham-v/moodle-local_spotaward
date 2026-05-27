@@ -4275,7 +4275,8 @@ final class api {
     public static function get_program_manager_submissions(int $userid, string $statusfilter = ''): array {
         global $DB;
 
-        $params = ['userid' => $userid];
+        $syscontextid = \context_system::instance()->id;
+        $params = ['userid' => $userid, 'syscontextid' => $syscontextid];
         $where = "n.programmanagerid = :userid";
 
         if ($statusfilter === 'active') {
@@ -4290,7 +4291,13 @@ final class api {
                        (SELECT COUNT(1) FROM {spotaward_nomination_items} ni
                          WHERE ni.nominationid = n.id) AS totalitems,
                        (SELECT COUNT(1) FROM {spotaward_nomination_items} ni
-                         WHERE ni.nominationid = n.id AND ni.status <> 'pending') AS revieweditems
+                         WHERE ni.nominationid = n.id AND ni.status <> 'pending') AS revieweditems,
+                       (SELECT COUNT(1) FROM {files} f
+                         WHERE f.contextid = :syscontextid
+                           AND f.component = 'local_spotaward'
+                           AND f.filearea = 'certificates'
+                           AND f.itemid = n.id
+                           AND f.filename <> '.') AS certificatesexist
                   FROM {spotaward_nominations} n
                   JOIN {course} c ON c.id = n.courseid
                   JOIN {user} u ON u.id = n.nominatorid

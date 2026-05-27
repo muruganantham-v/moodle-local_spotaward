@@ -423,18 +423,18 @@ if ($view === 'programmanager' && $ispm) {
             'status' => (function() use ($submission) {
                 $reviewed = (int)($submission->revieweditems ?? 0);
                 $total    = (int)($submission->totalitems ?? 0);
+                $hascerts = (int)($submission->certificatesexist ?? 0) > 0;
                 if ($submission->status === 'pending' && $reviewed > 0 && $total > 0) {
                     $label = get_string('partiallyreviewed', 'local_spotaward') .
                              ' (' . $reviewed . '/' . $total . ')';
-                    return local_spotaward_table_cell(
-                        local_spotaward_render_badge($label, 'warning'),
-                        ['text' => $label]
-                    );
+                } else if ($submission->status === 'ssteamprogress' && !$hascerts) {
+                    $label = get_string('approvedawaitingss', 'local_spotaward');
+                } else {
+                    $label = get_string($submission->status, 'local_spotaward');
                 }
-                $statuslabel = get_string($submission->status, 'local_spotaward');
                 return local_spotaward_table_cell(
-                    local_spotaward_render_badge($statuslabel),
-                    ['text' => $statuslabel]
+                    local_spotaward_render_badge($label),
+                    ['text' => $label]
                 );
             })(),
             'actions' => local_spotaward_table_cell(html_writer::link(
