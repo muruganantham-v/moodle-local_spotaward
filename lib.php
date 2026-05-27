@@ -387,7 +387,8 @@ function local_spotaward_nomination_form_js(moodle_url $ajaxurl): string {
                 if (String(selected[i].value) === String(it.value)) { idx = i; break; }
             }
             if (idx !== -1) {
-                selected.splice(idx, 1);
+                /* single-select: clicking the already-selected item keeps it selected */
+                if (multi) selected.splice(idx, 1);
             } else {
                 if (!multi) selected = [];
                 selected.push(it);
