@@ -287,11 +287,16 @@ $metaitems = [
 if ($nomination->status === 'closed') {
     $metaitems[get_string('dateclosed', 'local_spotaward')] = userdate((int)$nomination->timemodified);
 }
-$totalitems   = count($items);
+$totalitems    = count($items);
 $revieweditems = count(array_filter($items, function($item) { return $item->status !== 'pending'; }));
+$certificateexist = in_array($nomination->status, ['ssteamprogress', 'closed'], true)
+    && api::certificates_exist($id);
+
 if ($nomination->status === 'pending' && $revieweditems > 0 && $totalitems > 0) {
     $statuslabel = get_string('partiallyreviewed', 'local_spotaward') .
                    ' (' . $revieweditems . '/' . $totalitems . ')';
+} else if ($nomination->status === 'ssteamprogress' && !$certificateexist) {
+    $statuslabel = get_string('approvedawaitingss', 'local_spotaward');
 } else {
     $statuslabel = get_string($nomination->status, 'local_spotaward');
 }
@@ -309,8 +314,6 @@ echo html_writer::end_div();
 
 $actionbuttons = [];
 if (in_array($nomination->status, ['ssteamprogress', 'closed'], true)) {
-    $certificateexist = api::certificates_exist($id);
-
     if ($isssteam && $certificateexist) {
         $actionbuttons[] = html_writer::link(
             new moodle_url('/local/spotaward/view_certificate.php', ['nominationid' => $id, 'userid' => 0, 'sesskey' => sesskey()]),

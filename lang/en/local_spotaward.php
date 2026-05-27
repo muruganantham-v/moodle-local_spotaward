@@ -45,6 +45,7 @@ $string['rejected'] = 'Rejected';
 $string['reviewed'] = 'Reviewed';
 $string['underreview'] = 'PM - Under Review';
 $string['ssteamprogress'] = 'SS - In Progress';
+$string['approvedawaitingss'] = 'Approved — Awaiting SS Team';
 $string['closed'] = 'Closed';
 $string['approveall'] = 'Approve All';
 $string['confirmapproveall'] = 'Are you sure you want to approve all students in this nomination?';
