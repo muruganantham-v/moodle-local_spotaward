@@ -4460,14 +4460,15 @@ final class api {
             }
         }
 
-        // Once any item is approved (ssteamprogress), the nomination is visible to SS Team
-        // regardless of whether the PM still has pending items to review.
-        // Closed beats ssteamprogress; rejected only if nothing else.
-        if ($hasssteamprogress || ($hasclosed && $haspending)) {
+        // Any unreviewed student holds the whole nomination back (Option A).
+        // Only when every student has been approved or rejected does the nomination advance.
+        if ($haspending) {
+            $newstatus = 'pending';
+        } else if ($hasssteamprogress) {
             $newstatus = 'ssteamprogress';
         } else if ($hasclosed) {
             $newstatus = 'closed';
-        } else if ($hasrejected && !$haspending) {
+        } else if ($hasrejected) {
             $newstatus = 'rejected';
         } else {
             $newstatus = 'pending';
