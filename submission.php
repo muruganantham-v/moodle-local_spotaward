@@ -287,7 +287,15 @@ $metaitems = [
 if ($nomination->status === 'closed') {
     $metaitems[get_string('dateclosed', 'local_spotaward')] = userdate((int)$nomination->timemodified);
 }
-$metaitems[get_string('status', 'local_spotaward')] = local_spotaward_render_badge(get_string($nomination->status, 'local_spotaward'));
+$totalitems   = count($items);
+$revieweditems = count(array_filter($items, function($item) { return $item->status !== 'pending'; }));
+if ($nomination->status === 'pending' && $revieweditems > 0 && $totalitems > 0) {
+    $statuslabel = get_string('partiallyreviewed', 'local_spotaward') .
+                   ' (' . $revieweditems . '/' . $totalitems . ')';
+} else {
+    $statuslabel = get_string($nomination->status, 'local_spotaward');
+}
+$metaitems[get_string('status', 'local_spotaward')] = local_spotaward_render_badge($statuslabel);
 foreach ($metaitems as $label => $value) {
     echo html_writer::div(
         html_writer::tag('span', $label, ['class' => 'spotaward-meta-label']) .
