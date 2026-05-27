@@ -364,5 +364,39 @@ function xmldb_local_spotaward_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026052703, 'local', 'spotaward');
     }
 
+    if ($oldversion < 2026052704) {
+        // Repair nominations whose status is 'pending' but all their items have already
+        // been decided (ssteamprogress/rejected/closed). This mismatch was caused by the
+        // earlier migration that converted nomination-level 'underreview' → 'pending'
+        // without re-syncing the nomination status from its items.
+        $staleids = $DB->get_fieldset_sql(
+            "SELECT n.id FROM {spotaward_nominations} n
+              WHERE n.status = 'pending'
+                AND EXISTS (SELECT 1 FROM {spotaward_nomination_items} ni WHERE ni.nominationid = n.id)
+                AND NOT EXISTS (
+                  SELECT 1 FROM {spotaward_nomination_items} ni
+                   WHERE ni.nominationid = n.id AND ni.status IN ('pending', 'underreview')
+                )"
+        );
+        foreach ($staleids as $nomid) {
+            $statuses = $DB->get_fieldset_select('spotaward_nomination_items', 'status',
+                'nominationid = :nid', ['nid' => $nomid]);
+            $hasprogress = in_array('ssteamprogress', $statuses, true);
+            $hasclosed   = in_array('closed', $statuses, true);
+            $hasrejected = in_array('rejected', $statuses, true);
+            if ($hasprogress) {
+                $newstatus = 'ssteamprogress';
+            } else if ($hasclosed) {
+                $newstatus = 'closed';
+            } else if ($hasrejected) {
+                $newstatus = 'rejected';
+            } else {
+                continue;
+            }
+            $DB->set_field('spotaward_nominations', 'status', $newstatus, ['id' => $nomid]);
+        }
+        upgrade_plugin_savepoint(true, 2026052704, 'local', 'spotaward');
+    }
+
     return true;
 }
