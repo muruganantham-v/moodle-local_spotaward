@@ -43,7 +43,18 @@ $maacexecutive = !empty($nomination->maacexecutiveid) ? core_user::get_user($nom
 $items = api::get_nomination_items($id);
 
 if ($action === 'approve' && $itemid && $cancontinuereview && confirm_sesskey()) {
-    api::update_item_status($itemid, 'ssteamprogress', $USER->id);
+    // Guard against double-submit / back-button: only call the API if the item is
+    // still in a reviewable state. If it was already approved, redirect silently.
+    $targetitem = null;
+    foreach ($items as $sitem) {
+        if ((int)$sitem->id === (int)$itemid) {
+            $targetitem = $sitem;
+            break;
+        }
+    }
+    if ($targetitem && in_array($targetitem->status, ['pending', 'underreview'], true)) {
+        api::update_item_status($itemid, 'ssteamprogress', $USER->id);
+    }
     local_spotaward_success_redirect(
         new moodle_url('/local/spotaward/submission.php', ['id' => $id]),
         get_string('reviewupdated', 'local_spotaward')
@@ -53,7 +64,16 @@ if ($action === 'approve' && $itemid && $cancontinuereview && confirm_sesskey())
 if ($action === 'reapprove' && $itemid && $canreview
         && in_array($nomination->status, ['pending', 'underreview', 'ssteamprogress'], true)
         && confirm_sesskey()) {
-    api::update_item_status($itemid, 'ssteamprogress', $USER->id, '');
+    $targetitem = null;
+    foreach ($items as $sitem) {
+        if ((int)$sitem->id === (int)$itemid) {
+            $targetitem = $sitem;
+            break;
+        }
+    }
+    if ($targetitem && $targetitem->status === 'rejected') {
+        api::update_item_status($itemid, 'ssteamprogress', $USER->id, '');
+    }
     local_spotaward_success_redirect(
         new moodle_url('/local/spotaward/submission.php', ['id' => $id]),
         get_string('reviewupdated', 'local_spotaward')
