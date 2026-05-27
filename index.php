@@ -186,9 +186,14 @@ if ($isnominator) {
         $selectedcourseid = $draftcontext['courseid'];
     }
 
-    $allcourseoptions = api::get_nominator_courses($USER->id);
-    $selectedprogrammanagerid = (int)($draftcontext['programmanagerid'] ?? 0);
-    $selectedmaacexecutiveid = (int)($draftcontext['maacexecutiveid'] ?? 0);
+    $isformpost = optional_param('submitnominations', '', PARAM_RAW) !== ''
+        || optional_param('previewdraft', '', PARAM_RAW) !== ''
+        || optional_param('cleardraft', '', PARAM_RAW) !== '';
+
+    if ($section === 'form' || $isformpost) {
+        $allcourseoptions = api::get_nominator_courses($USER->id);
+        $selectedprogrammanagerid = (int)($draftcontext['programmanagerid'] ?? 0);
+        $selectedmaacexecutiveid = (int)($draftcontext['maacexecutiveid'] ?? 0);
 
         $mform = new nomination_form(null, [
             'courseoptions' => $allcourseoptions,
@@ -200,76 +205,77 @@ if ($isnominator) {
             'fielderrors' => $nominationfielderrors,
         ]);
 
-    if (optional_param('submitnominations', '', PARAM_RAW) !== '') {
-        require_sesskey();
-        $currentdata = (object)[
-            'courseid' => optional_param('courseid', 0, PARAM_INT),
-            'modulename' => optional_param('modulename', '', PARAM_TEXT),
-            'awardpayload' => local_spotaward_build_awardpayload_from_request(),
-            'professional' => optional_param('professional', '', PARAM_TEXT),
-            'programmanagerid' => optional_param('programmanagerid', 0, PARAM_INT),
-            'maacexecutiveid' => optional_param('maacexecutiveid', 0, PARAM_INT),
-        ];
-        $nominationfielderrors = local_spotaward_validate_nomination_request($currentdata);
-        if (empty($nominationfielderrors)) {
-            api::replace_draft_entries($currentdata, $USER->id);
-            api::submit_draft_entries($USER->id);
-            local_spotaward_success_redirect(
-                new moodle_url('/local/spotaward/index.php', ['view' => 'nominator']),
-                get_string('submissioncreated', 'local_spotaward')
-            );
-        }
-        $nominationformerror = reset($nominationfielderrors);
-        $mform->set_data($currentdata);
-    }
-
-    if (optional_param('cleardraft', '', PARAM_RAW) !== '') {
-        require_sesskey();
-        api::clear_draft_entries();
-        local_spotaward_success_redirect(
-            new moodle_url('/local/spotaward/index.php', ['view' => 'nominator']),
-            get_string('draftentriescleared', 'local_spotaward')
-        );
-    }
-
-    if (optional_param('previewdraft', '', PARAM_RAW) !== '') {
-        require_sesskey();
-        $previewdata = (object)[
-            'courseid' => optional_param('courseid', 0, PARAM_INT),
-            'modulename' => optional_param('modulename', '', PARAM_TEXT),
-            'awardpayload' => local_spotaward_build_awardpayload_from_request(),
-            'professional' => optional_param('professional', '', PARAM_TEXT),
-            'programmanagerid' => optional_param('programmanagerid', 0, PARAM_INT),
-            'maacexecutiveid' => optional_param('maacexecutiveid', 0, PARAM_INT),
-        ];
-        $nominationfielderrors = local_spotaward_validate_nomination_request($previewdata);
-        if (empty($nominationfielderrors)) {
-            api::replace_draft_entries($previewdata, $USER->id);
-            local_spotaward_success_redirect(
-                new moodle_url('/local/spotaward/index.php', ['view' => 'nominator']),
-                get_string('draftpreviewupdated', 'local_spotaward')
-            );
-        }
-        $nominationformerror = reset($nominationfielderrors);
-        $mform->set_data($previewdata);
-    } else if ($mform->is_cancelled()) {
-        redirect(new moodle_url('/local/spotaward/index.php', ['view' => 'nominator']));
-    }
-
-    if (!empty($nominationfielderrors)) {
-        $mform = new nomination_form(null, [
-            'courseoptions' => $allcourseoptions,
-            'selectedprogrammanagerid' => $selectedprogrammanagerid,
-            'selectedmaacexecutiveid' => $selectedmaacexecutiveid,
-            'selectedcourseid' => $selectedcourseid,
-            'hasdraftentries' => $hasdraftentries,
-            'draftcontext' => $draftcontext,
-            'fielderrors' => $nominationfielderrors,
-        ]);
-        if (!empty($previewdata ?? null)) {
-            $mform->set_data($previewdata);
-        } else if (!empty($currentdata ?? null)) {
+        if (optional_param('submitnominations', '', PARAM_RAW) !== '') {
+            require_sesskey();
+            $currentdata = (object)[
+                'courseid' => optional_param('courseid', 0, PARAM_INT),
+                'modulename' => optional_param('modulename', '', PARAM_TEXT),
+                'awardpayload' => local_spotaward_build_awardpayload_from_request(),
+                'professional' => optional_param('professional', '', PARAM_TEXT),
+                'programmanagerid' => optional_param('programmanagerid', 0, PARAM_INT),
+                'maacexecutiveid' => optional_param('maacexecutiveid', 0, PARAM_INT),
+            ];
+            $nominationfielderrors = local_spotaward_validate_nomination_request($currentdata);
+            if (empty($nominationfielderrors)) {
+                api::replace_draft_entries($currentdata, $USER->id);
+                api::submit_draft_entries($USER->id);
+                local_spotaward_success_redirect(
+                    new moodle_url('/local/spotaward/index.php', ['view' => 'nominator']),
+                    get_string('submissioncreated', 'local_spotaward')
+                );
+            }
+            $nominationformerror = reset($nominationfielderrors);
             $mform->set_data($currentdata);
+        }
+
+        if (optional_param('cleardraft', '', PARAM_RAW) !== '') {
+            require_sesskey();
+            api::clear_draft_entries();
+            local_spotaward_success_redirect(
+                new moodle_url('/local/spotaward/index.php', ['view' => 'nominator']),
+                get_string('draftentriescleared', 'local_spotaward')
+            );
+        }
+
+        if (optional_param('previewdraft', '', PARAM_RAW) !== '') {
+            require_sesskey();
+            $previewdata = (object)[
+                'courseid' => optional_param('courseid', 0, PARAM_INT),
+                'modulename' => optional_param('modulename', '', PARAM_TEXT),
+                'awardpayload' => local_spotaward_build_awardpayload_from_request(),
+                'professional' => optional_param('professional', '', PARAM_TEXT),
+                'programmanagerid' => optional_param('programmanagerid', 0, PARAM_INT),
+                'maacexecutiveid' => optional_param('maacexecutiveid', 0, PARAM_INT),
+            ];
+            $nominationfielderrors = local_spotaward_validate_nomination_request($previewdata);
+            if (empty($nominationfielderrors)) {
+                api::replace_draft_entries($previewdata, $USER->id);
+                local_spotaward_success_redirect(
+                    new moodle_url('/local/spotaward/index.php', ['view' => 'nominator']),
+                    get_string('draftpreviewupdated', 'local_spotaward')
+                );
+            }
+            $nominationformerror = reset($nominationfielderrors);
+            $mform->set_data($previewdata);
+        } else if ($mform->is_cancelled()) {
+            redirect(new moodle_url('/local/spotaward/index.php', ['view' => 'nominator']));
+        }
+
+        if (!empty($nominationfielderrors)) {
+            $mform = new nomination_form(null, [
+                'courseoptions' => $allcourseoptions,
+                'selectedprogrammanagerid' => $selectedprogrammanagerid,
+                'selectedmaacexecutiveid' => $selectedmaacexecutiveid,
+                'selectedcourseid' => $selectedcourseid,
+                'hasdraftentries' => $hasdraftentries,
+                'draftcontext' => $draftcontext,
+                'fielderrors' => $nominationfielderrors,
+            ]);
+            if (!empty($previewdata ?? null)) {
+                $mform->set_data($previewdata);
+            } else if (!empty($currentdata ?? null)) {
+                $mform->set_data($currentdata);
+            }
         }
     }
 }
@@ -331,8 +337,11 @@ if ($view === 'nominator' && $isnominator) {
         ['class' => 'spotaward-subtab' . ($section === 'history' ? ' is-active' : '')]
     );
     echo html_writer::end_div();
-    $PAGE->requires->js_init_code(local_spotaward_nomination_form_js(new moodle_url('/local/spotaward/ajax.php')));
-    $PAGE->requires->js_call_amd('local_spotaward/nomination', 'init');
+
+    if ($section === 'form') {
+        $PAGE->requires->js_init_code(local_spotaward_nomination_form_js(new moodle_url('/local/spotaward/ajax.php')));
+        $PAGE->requires->js_call_amd('local_spotaward/nomination', 'init');
+    }
 
     if ($section === 'form') {
         echo html_writer::start_div('spotaward-card');

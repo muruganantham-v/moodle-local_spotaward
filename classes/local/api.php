@@ -250,6 +250,10 @@ final class api {
      */
     public static function get_nominator_courses(int $userid): array {
         global $DB;
+        static $cache = [];
+        if (isset($cache[$userid])) {
+            return $cache[$userid];
+        }
 
         if (is_siteadmin($userid)) {
             $records = $DB->get_records_select('course', 'id <> :sitecourse', ['sitecourse' => SITEID], 'fullname ASC',
@@ -261,7 +265,7 @@ final class api {
                 }
                 $options[$record->id] = format_string($record->fullname, true, ['context' => context_course::instance($record->id)]);
             }
-            return $options;
+            return $cache[$userid] = $options;
         }
 
         $sql = "SELECT DISTINCT c.id, c.shortname, c.fullname
@@ -292,7 +296,7 @@ final class api {
             $options[$record->id] = format_string($record->fullname, true, ['context' => context_course::instance($record->id)]);
         }
 
-        return $options;
+        return $cache[$userid] = $options;
     }
 
     /**
@@ -555,18 +559,38 @@ final class api {
      * @return array
      */
     public static function get_draft_preview_rows(int $userid): array {
-        $rows = [];
+        global $DB;
 
-        foreach (self::get_draft_entries() as $entry) {
+        $entries = self::get_draft_entries();
+        if (empty($entries)) {
+            return [];
+        }
+
+        $studentids = [];
+        foreach ($entries as $entry) {
+            foreach ($entry['studentids'] as $sid) {
+                $studentids[(int)$sid] = true;
+            }
+        }
+
+        $students = $DB->get_records_list('user', 'id', array_keys($studentids),
+            '', 'id, firstname, lastname, firstnamephonetic, lastnamephonetic, middlename, alternatename, email, username');
+        $mentor = core_user::get_user($userid);
+
+        $rows = [];
+        foreach ($entries as $entry) {
             foreach ($entry['studentids'] as $studentid) {
-                $student = core_user::get_user($studentid, 'id, firstname, lastname, email, username', MUST_EXIST);
+                $student = $students[(int)$studentid] ?? null;
+                if (!$student) {
+                    continue;
+                }
                 $rows[] = [
                     'studentname' => fullname($student),
                     'studentemail' => s($student->email),
                     'admissionid' => s($student->username),
                     'batchname' => s($entry['coursename']),
                     'module' => s($entry['modulename']),
-                    'mentorname' => fullname(core_user::get_user($userid)),
+                    'mentorname' => fullname($mentor),
                     'awardcategory' => s($entry['awardcategory']),
                     'professional' => s($entry['professional'] ?? ''),
                     'awarddescription' => $entry['awarddescription'],  // Allow HTML formatting tags to render in preview
