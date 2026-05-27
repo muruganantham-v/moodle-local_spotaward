@@ -35,7 +35,6 @@ function local_spotaward_require_action_success_overlay(): void {
 
     $title = get_string('successfullycompleted', 'local_spotaward');
     $subtitle = get_string('redirecting', 'local_spotaward');
-    $countdowntemplate = get_string('closinginseconds', 'local_spotaward', '__SECONDS__');
     $goback = get_string('gobacknow', 'local_spotaward');
     $cancel = get_string('cancel');
     $close = get_string('close', 'local_spotaward');
@@ -62,8 +61,6 @@ function local_spotaward_require_action_success_overlay(): void {
         '".spotaward-success-title{margin:0;font-size:22px;font-weight:700;color:#10212b;transition:color .25s ease;}",' .
         '".spotaward-success-title.is-done{color:#1D9E75;}",' .
         '".spotaward-success-subtitle{margin:6px 0 0;font-size:15px;color:#6c7b88;font-weight:500;}",' .
-        '".spotaward-success-count-label{margin-top:14px;color:#5f6e7a;font-size:13px;}",' .
-        '".spotaward-success-count-value{margin-top:4px;font-size:30px;line-height:1;font-weight:700;color:#1D9E75;}",' .
         '".spotaward-success-close{position:absolute;top:10px;right:10px;width:34px;height:34px;border:0;border-radius:999px;background:#f4f6f8;color:#51606d;font-size:20px;line-height:1;cursor:pointer;}",' .
         '".spotaward-success-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:18px;}",' .
         '".spotaward-success-actions .btn{min-width:90px;}",' .
@@ -88,8 +85,6 @@ function local_spotaward_require_action_success_overlay(): void {
                     '<div class="spotaward-success-content">' .
                         '<h2 class="spotaward-success-title" id="spotaward-success-inline-title">' . s($title) . '</h2>' .
                         '<p class="spotaward-success-subtitle">' . s($subtitle) . '</p>' .
-                        '<div class="spotaward-success-count-label" id="spotaward-success-inline-label"></div>' .
-                        '<div class="spotaward-success-count-value" id="spotaward-success-inline-count"></div>' .
                     '</div>' .
                 '</div>' .
                 '<div class="spotaward-success-actions">' .
@@ -100,8 +95,8 @@ function local_spotaward_require_action_success_overlay(): void {
         ) . ';' .
         'document.body.appendChild(overlay);' .
         'var spin=document.getElementById("spotaward-inline-spin");var ring=document.getElementById("spotaward-inline-ring");var tick=document.getElementById("spotaward-inline-tick");' .
-        'var titleEl=document.getElementById("spotaward-success-inline-title");var subtitleEl=overlay.querySelector(".spotaward-success-subtitle");var label=document.getElementById("spotaward-success-inline-label");var count=document.getElementById("spotaward-success-inline-count");' .
-        'var open=false;var timer=null;' .
+        'var titleEl=document.getElementById("spotaward-success-inline-title");var subtitleEl=overlay.querySelector(".spotaward-success-subtitle");' .
+        'var open=false;' .
         'function normaliseActionText(text){return String(text||"").replace(/\s+/g," ").trim().toLowerCase();}' .
         'function getActionMessages(text){var key=normaliseActionText(text);var map={' .
             '"submit":{progress:"Submitting nomination...",success:"Nomination successfully submitted"},' .
@@ -122,9 +117,8 @@ function local_spotaward_require_action_success_overlay(): void {
         'function getElementMessages(el){if(!el){return null;}var progress=el.getAttribute("data-spotaward-progress-message");var success=el.getAttribute("data-spotaward-success-message");if(progress&&success){return{progress:progress,success:success};}return null;}' .
         'function getElementActionText(el){if(!el){return "";}if(typeof el.value==="string"&&el.value.trim()!==""){return el.value;}return String(el.textContent||"").replace(/\s+/g," ").trim();}' .
         'overlay.addEventListener("click",function(e){if(e.target.closest("[data-spotaward-success-back]")){window.history.back();return;}if(e.target.closest("[data-spotaward-success-close]")){overlay.classList.remove("is-open");document.body.classList.remove("spotaward-success-busy");}});' .
-        'function updateCountdown(seconds){label.textContent=' . json_encode($countdowntemplate) . '.replace("__SECONDS__", String(seconds));count.textContent=String(seconds);}' .
         'function shouldStartForSubmitter(submitter){if(!submitter){return false;}var name=String(submitter.name||"");if(name==="previewdraft"||name==="cleardraft"){return false;}if(name==="submitnominations"||name==="submitbutton"){return true;}var id=String(submitter.id||"");if(id==="id_submitbutton"){return true;}return submitter.hasAttribute("data-spotaward-success-submit");}' .
-        'function startOverlay(actionText, explicitMessages){if(open){return;}open=true;var messages=explicitMessages||getActionMessages(actionText);document.body.classList.add("spotaward-success-busy");overlay.classList.add("is-open");if(titleEl){titleEl.textContent=messages.progress;titleEl.classList.remove("is-done");}if(subtitleEl){subtitleEl.textContent="Please wait...";}if(spin){spin.className="spin-svg";}if(ring){ring.className="ring-arc";}if(tick){tick.className="tick-path";}updateCountdown(3);window.setTimeout(function(){if(spin){spin.classList.add("stopped");}if(ring){ring.classList.add("full-green");}},850);window.setTimeout(function(){if(tick){tick.classList.add("drawn");}if(titleEl){titleEl.textContent=messages.success;titleEl.classList.add("is-done");}if(subtitleEl){subtitleEl.textContent=' . json_encode($subtitle) . ';}},1150);var left=3;timer=window.setInterval(function(){left-=1;if(left<0){left=0;}updateCountdown(left);if(left===0){window.clearInterval(timer);if(label){label.textContent="";}if(count){count.textContent="";}if(subtitleEl){subtitleEl.textContent="Redirecting…";}}},1000);}' .
+        'function startOverlay(actionText, explicitMessages){if(open){return;}open=true;var messages=explicitMessages||getActionMessages(actionText);document.body.classList.add("spotaward-success-busy");overlay.classList.add("is-open");if(titleEl){titleEl.textContent=messages.progress;titleEl.classList.remove("is-done");}if(subtitleEl){subtitleEl.textContent="Please wait...";}if(spin){spin.className="spin-svg";}if(ring){ring.className="ring-arc";}if(tick){tick.className="tick-path";}window.setTimeout(function(){if(spin){spin.classList.add("stopped");}if(ring){ring.classList.add("full-green");}},850);window.setTimeout(function(){if(tick){tick.classList.add("drawn");}if(titleEl){titleEl.textContent=messages.success;titleEl.classList.add("is-done");}if(subtitleEl){subtitleEl.textContent=' . json_encode($subtitle) . ';}},1150);}' .
         'document.addEventListener("submit",function(e){var submitter=e.submitter;if(submitter&&submitter.name&&submitter.name.toLowerCase().indexOf("cancel")!==-1){return;}if(!shouldStartForSubmitter(submitter)){return;}startOverlay(getElementActionText(submitter),getElementMessages(submitter));},true);' .
         'document.addEventListener("click",function(e){var link=e.target.closest("a[data-spotaward-success]");if(!link||link.target==="_blank"||e.defaultPrevented){return;}startOverlay(getElementActionText(link),getElementMessages(link));},false);' .
         'window.localSpotawardStartSuccessOverlay=startOverlay;' .
