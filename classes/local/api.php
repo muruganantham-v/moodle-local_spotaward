@@ -1532,7 +1532,9 @@ final class api {
         global $DB;
         static $cache = [];
         if (!isset($cache[$nominationid])) {
-            $sql = "SELECT ni.*, u.firstname, u.lastname, u.email, u.username
+            $sql = "SELECT ni.*,
+                             u.firstname, u.lastname, u.firstnamephonetic, u.lastnamephonetic,
+                             u.middlename, u.alternatename, u.email, u.username
                       FROM {spotaward_nomination_items} ni
                       JOIN {user} u ON u.id = ni.studentid
                      WHERE ni.nominationid = :nominationid

@@ -167,21 +167,17 @@ if ($action === 'closerecord' && $isssteam && $nomination->status === 'ssteampro
     }
 }
 
-$course = get_course($nomination->courseid);
-$nominator = core_user::get_user($nomination->nominatorid);
-$programmanager = core_user::get_user($nomination->programmanagerid);
-$maacexecutive = !empty($nomination->maacexecutiveid) ? core_user::get_user($nomination->maacexecutiveid) : null;
-
-$categories = [];
+/* parse award categories from the stored description (one per line-group: "Category: desc") */
+$allcategories = '';
 if (!empty($nomination->awarddescription)) {
-    $parts = preg_split('/\n\n/', $nomination->awarddescription);
-    foreach ($parts as $part) {
-        if (preg_match('/^(.+?):\s*/', $part, $matches)) {
-            $categories[] = $matches[1];
+    $cats = [];
+    foreach (preg_split('/\n\n/', $nomination->awarddescription) as $part) {
+        if (preg_match('/^(.+?):/', $part, $m)) {
+            $cats[] = trim($m[1]);
         }
     }
+    $allcategories = implode(', ', $cats);
 }
-$allcategories = implode(', ', $categories);
 
 echo $OUTPUT->header();
 echo html_writer::start_div('local-spotaward-app');
@@ -264,6 +260,8 @@ $metaitems = [
     ),
     get_string('module', 'local_spotaward') => s($nomination->modulename),
     get_string('professional', 'local_spotaward') => s($nomination->professional ?? ''),
+    get_string('awardcategories', 'local_spotaward') => s($allcategories),
+    get_string('studentcount', 'local_spotaward') => (int)$nomination->studentcount,
     get_string('datesubmitted', 'local_spotaward') => userdate((int)$nomination->timecreated),
 ];
 if ($nomination->status === 'closed') {

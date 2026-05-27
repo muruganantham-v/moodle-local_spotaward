@@ -16,6 +16,7 @@ $string['managerdashboard'] = 'Manager dashboard';
 $string['course'] = 'Course';
 $string['students'] = 'Students';
 $string['module'] = 'Module';
+$string['awardcategories'] = 'Award categories';
 $string['awardcategory'] = 'Award category';
 $string['professional'] = 'Professional';
 $string['awarddescription'] = 'Award description';
