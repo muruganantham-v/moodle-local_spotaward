@@ -4460,21 +4460,17 @@ final class api {
             }
         }
 
-        $newstatus = 'pending';
-        if (!$haspending && !$hasssteamprogress && !$hasrejected && !$hasclosed) {
-            $newstatus = 'pending';
-        } else if ($haspending && !$hasssteamprogress && !$hasrejected && !$hasclosed) {
-            $newstatus = 'pending';
-        } else if ($haspending) {
-            $newstatus = 'pending';
-        } else if (!$haspending && !$hasssteamprogress && !$hasrejected && $hasclosed) {
-            $newstatus = 'closed';
-        } else if (!$haspending && !$hasssteamprogress && $hasrejected && !$hasclosed) {
-            $newstatus = 'rejected';
-        } else if (!$haspending && !$hasssteamprogress && $hasclosed) {
-            $newstatus = 'closed';
-        } else {
+        // Once any item is approved (ssteamprogress), the nomination is visible to SS Team
+        // regardless of whether the PM still has pending items to review.
+        // Closed beats ssteamprogress; rejected only if nothing else.
+        if ($hasssteamprogress || ($hasclosed && $haspending)) {
             $newstatus = 'ssteamprogress';
+        } else if ($hasclosed) {
+            $newstatus = 'closed';
+        } else if ($hasrejected && !$haspending) {
+            $newstatus = 'rejected';
+        } else {
+            $newstatus = 'pending';
         }
 
         $DB->update_record('spotaward_nominations', (object)[

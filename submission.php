@@ -30,7 +30,7 @@ local_spotaward_require_stylesheet();
 local_spotaward_require_action_success_overlay();
 
 $canreview = is_siteadmin() || ((int)$nomination->programmanagerid === (int)$USER->id);
-$cancontinuereview = $canreview && in_array($nomination->status, ['pending', 'underreview'], true);
+$cancontinuereview = $canreview && in_array($nomination->status, ['pending', 'underreview', 'ssteamprogress'], true);
 $canmanagerapprove = is_siteadmin() || api::is_manager($USER->id);
 $isssteam = api::is_assigned_maac_executive($nomination, (int)$USER->id);
 $canviewcertificates = ($canmanagerapprove || $isssteam)
