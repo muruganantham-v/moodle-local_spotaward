@@ -516,7 +516,19 @@ if ($view === 'ssteam' && $isssteam) {
             'module' => local_spotaward_table_cell(s($modulename), ['text' => $modulename]),
             'professional' => local_spotaward_table_cell(s($professional), ['text' => $professional]),
             'studentcount' => local_spotaward_table_cell(s((string)$record->studentcount), ['text' => (string)$record->studentcount, 'sort' => (int)$record->studentcount]),
-            'status' => local_spotaward_table_cell(local_spotaward_render_badge(get_string($record->status, 'local_spotaward')), ['text' => get_string($record->status, 'local_spotaward')]),
+            'status' => (function() use ($record) {
+                $reviewed = (int)($record->revieweditems ?? 0);
+                $total    = (int)($record->totalitems ?? 0);
+                $hascerts = (int)($record->certificatesexist ?? 0) > 0;
+                if ($record->status === 'pending' && $reviewed > 0 && $total > 0) {
+                    $label = get_string('partiallyreviewed', 'local_spotaward') . ' (' . $reviewed . '/' . $total . ')';
+                } else if ($record->status === 'ssteamprogress' && !$hascerts) {
+                    $label = get_string('approvedawaitingss', 'local_spotaward');
+                } else {
+                    $label = get_string($record->status, 'local_spotaward');
+                }
+                return local_spotaward_table_cell(local_spotaward_render_badge($label), ['text' => $label]);
+            })(),
             'actions' => local_spotaward_table_cell(implode(' | ', $actions), ['text' => get_string('viewdetails', 'local_spotaward'), 'search' => '']),
         ];
     }
@@ -595,7 +607,19 @@ if ($view === 'manager' && $ismanager) {
             'module' => local_spotaward_table_cell(s($modulename), ['text' => $modulename]),
             'professional' => local_spotaward_table_cell(s($professional), ['text' => $professional]),
             'studentcount' => local_spotaward_table_cell(s((string)$record->studentcount), ['text' => (string)$record->studentcount, 'sort' => (int)$record->studentcount]),
-            'status' => local_spotaward_table_cell(local_spotaward_render_badge(get_string($record->status, 'local_spotaward')), ['text' => get_string($record->status, 'local_spotaward')]),
+            'status' => (function() use ($record) {
+                $reviewed = (int)($record->revieweditems ?? 0);
+                $total    = (int)($record->totalitems ?? 0);
+                $hascerts = (int)($record->certificatesexist ?? 0) > 0;
+                if ($record->status === 'pending' && $reviewed > 0 && $total > 0) {
+                    $label = get_string('partiallyreviewed', 'local_spotaward') . ' (' . $reviewed . '/' . $total . ')';
+                } else if ($record->status === 'ssteamprogress' && !$hascerts) {
+                    $label = get_string('approvedawaitingss', 'local_spotaward');
+                } else {
+                    $label = get_string($record->status, 'local_spotaward');
+                }
+                return local_spotaward_table_cell(local_spotaward_render_badge($label), ['text' => $label]);
+            })(),
             'actions' => local_spotaward_table_cell(implode(' | ', $actions), ['text' => get_string('viewdetails', 'local_spotaward') . ' ' . get_string('delete', 'local_spotaward'), 'search' => '']),
         ];
     }

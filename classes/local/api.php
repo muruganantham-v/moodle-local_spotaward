@@ -4419,10 +4419,23 @@ final class api {
         }
         $combinedsql = $combined ? ('WHERE ' . implode(' AND ', $combined)) : '';
 
+        $syscontextid = \context_system::instance()->id;
+        $params['syscontextid'] = $syscontextid;
+
         $sql = "SELECT n.*, c.fullname AS coursename,
                        mentor.firstname AS mentorfirstname, mentor.lastname AS mentorlastname,
                        pm.firstname AS pmfirstname, pm.lastname AS pmlastname,
-                       maac.firstname AS maacfirstname, maac.lastname AS maaclastname
+                       maac.firstname AS maacfirstname, maac.lastname AS maaclastname,
+                       (SELECT COUNT(1) FROM {spotaward_nomination_items} ni
+                         WHERE ni.nominationid = n.id) AS totalitems,
+                       (SELECT COUNT(1) FROM {spotaward_nomination_items} ni
+                         WHERE ni.nominationid = n.id AND ni.status <> 'pending') AS revieweditems,
+                       (SELECT COUNT(1) FROM {files} f
+                         WHERE f.contextid = :syscontextid
+                           AND f.component = 'local_spotaward'
+                           AND f.filearea = 'certificates'
+                           AND f.itemid = n.id
+                           AND f.filename <> '.') AS certificatesexist
                   FROM {spotaward_nominations} n
                   JOIN {course} c ON c.id = n.courseid
                   JOIN {user} mentor ON mentor.id = n.nominatorid
