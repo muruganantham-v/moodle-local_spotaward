@@ -306,17 +306,7 @@ if (count($tabs) > 1) {
     echo html_writer::end_div();
 }
 
-$reportcourses = api::get_report_courses_for_user($USER->id);
-if (!empty($reportcourses)) {
-    echo html_writer::div(
-        html_writer::link(
-            new moodle_url('/local/spotaward/report.php'),
-            get_string('viewperformancereport', 'local_spotaward'),
-            ['class' => 'btn btn-outline-secondary']
-        ),
-        'mb-4'
-    );
-}
+
 
 if ($view === 'nominator' && $isnominator) {
     if (!in_array($section, ['form', 'history'], true)) {
