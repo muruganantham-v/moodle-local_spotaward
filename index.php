@@ -420,7 +420,23 @@ if ($view === 'programmanager' && $ispm) {
                 'sort' => $timestamp,
                 'date' => userdate($timestamp, '%Y-%m-%d'),
             ]),
-            'status' => local_spotaward_table_cell(local_spotaward_render_badge(get_string($submission->status, 'local_spotaward')), ['text' => get_string($submission->status, 'local_spotaward')]),
+            'status' => (function() use ($submission) {
+                $reviewed = (int)($submission->revieweditems ?? 0);
+                $total    = (int)($submission->totalitems ?? 0);
+                if ($submission->status === 'pending' && $reviewed > 0 && $total > 0) {
+                    $label = get_string('partiallyreviewed', 'local_spotaward') .
+                             ' (' . $reviewed . '/' . $total . ')';
+                    return local_spotaward_table_cell(
+                        local_spotaward_render_badge($label, 'warning'),
+                        ['text' => $label]
+                    );
+                }
+                $statuslabel = get_string($submission->status, 'local_spotaward');
+                return local_spotaward_table_cell(
+                    local_spotaward_render_badge($statuslabel),
+                    ['text' => $statuslabel]
+                );
+            })(),
             'actions' => local_spotaward_table_cell(html_writer::link(
                 new moodle_url('/local/spotaward/submission.php', ['id' => $submission->id]),
                 get_string('reviewsubmission', 'local_spotaward')

@@ -4,6 +4,12 @@
         <div class="spotaward-stat-value">{{pending}}</div>
         <div class="spotaward-stat-label">{{pendinglabel}}</div>
     </div>
+    {{#partiallyreviewed}}
+    <div class="spotaward-stat-card is-partial">
+        <div class="spotaward-stat-value">{{partiallyreviewed}}</div>
+        <div class="spotaward-stat-label">{{partiallyreviewedlabel}}</div>
+    </div>
+    {{/partiallyreviewed}}
     {{/showpending}}
     <div class="spotaward-stat-card is-ssteam">
         <div class="spotaward-stat-value">{{ssteamprogress}}</div>

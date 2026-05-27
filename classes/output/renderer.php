@@ -158,6 +158,8 @@ final class renderer extends plugin_renderer_base {
             'showrejected' => $showrejected,
             'pending' => $counts['pending'] ?? 0,
             'pendinglabel' => get_string('pendingtickets', 'local_spotaward'),
+            'partiallyreviewed' => $counts['partiallyreviewed'] ?? 0,
+            'partiallyreviewedlabel' => get_string('partiallyreviewedtickets', 'local_spotaward'),
             'rejected' => $counts['rejected'] ?? 0,
             'ssteamprogress' => $counts['ssteamprogress'] ?? 0,
             'ssteamprogresslabel' => get_string('totalssteamprogress', 'local_spotaward'),

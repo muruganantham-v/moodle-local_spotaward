@@ -4286,12 +4286,16 @@ final class api {
 
         $sql = "SELECT n.*, c.fullname AS coursename,
                        u.firstname, u.lastname,
-                       maac.firstname AS maacfirstname, maac.lastname AS maaclastname
+                       maac.firstname AS maacfirstname, maac.lastname AS maaclastname,
+                       (SELECT COUNT(1) FROM {spotaward_nomination_items} ni
+                         WHERE ni.nominationid = n.id) AS totalitems,
+                       (SELECT COUNT(1) FROM {spotaward_nomination_items} ni
+                         WHERE ni.nominationid = n.id AND ni.status <> 'pending') AS revieweditems
                   FROM {spotaward_nominations} n
                   JOIN {course} c ON c.id = n.courseid
                   JOIN {user} u ON u.id = n.nominatorid
              LEFT JOIN {user} maac ON maac.id = n.maacexecutiveid
-                  WHERE {$where}
+                 WHERE {$where}
                ORDER BY n.timecreated DESC";
 
         return array_values($DB->get_records_sql($sql, $params));
@@ -4328,6 +4332,7 @@ final class api {
 
         $counts = [
             'pending' => 0,
+            'partiallyreviewed' => 0,
             'rejected' => 0,
             'ssteamprogress' => 0,
             'closed' => 0,
@@ -4341,6 +4346,21 @@ final class api {
             if (isset($counts[$record->status])) {
                 $counts[$record->status] = (int)$record->cnt;
             }
+        }
+
+        // Split 'pending' into pure-pending vs partially-reviewed.
+        if ($counts['pending'] > 0) {
+            $prparams = $params;
+            $prwhere = $wheresql ? $wheresql . ' AND ' : 'WHERE ';
+            $prwhere .= "n.status = 'pending'
+                         AND EXISTS (
+                             SELECT 1 FROM {spotaward_nomination_items} ni
+                              WHERE ni.nominationid = n.id AND ni.status <> 'pending'
+                         )";
+            $prsql = "SELECT COUNT(1) AS cnt FROM {spotaward_nominations} n {$prwhere}";
+            $prcount = (int)$DB->count_records_sql($prsql, $prparams);
+            $counts['partiallyreviewed'] = $prcount;
+            $counts['pending'] = max(0, $counts['pending'] - $prcount);
         }
 
         return $counts;

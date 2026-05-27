@@ -432,6 +432,15 @@
   color: #2e7d32;
 }
 
+.spotaward-stat-card.is-partial {
+  border-left: 4px solid #f57c00;
+  background: linear-gradient(135deg, #fff3e0 0%, #ffffff 100%);
+}
+
+.spotaward-stat-card.is-partial .spotaward-stat-label {
+  color: #f57c00;
+}
+
 /* ==================== 7. META GRID ==================== */
 .spotaward-meta {
   display: grid;
@@ -859,6 +868,12 @@
   background: #e3f2fd;
   color: #1565c0;
   border: 1px solid #bbdefb;
+}
+
+.spotaward-badge-partiallyreviewed {
+  background: #fff3e0;
+  color: #f57c00;
+  border: 1px solid #ffe0b2;
 }
 
 /* ==================== 20. ACTION ROW ==================== */
