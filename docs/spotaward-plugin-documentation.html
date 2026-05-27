@@ -1,0 +1,836 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Spot Award Plugin Documentation</title>
+    <style>
+        :root {
+            --ink: #1f2937;
+            --muted: #5b6474;
+            --line: #d7deea;
+            --panel: #f7f9fc;
+            --accent: #0f5fa8;
+            --accent-soft: #e9f2fb;
+            --ok: #216e39;
+            --warn: #9a6700;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            font-family: "Segoe UI", Arial, sans-serif;
+            color: var(--ink);
+            line-height: 1.55;
+            background: #fff;
+        }
+
+        .page {
+            max-width: 980px;
+            margin: 0 auto;
+            padding: 40px 44px 64px;
+        }
+
+        .hero {
+            border: 1px solid var(--line);
+            background: linear-gradient(135deg, #f7fbff 0%, #eef4fb 100%);
+            border-radius: 20px;
+            padding: 28px 30px;
+            margin-bottom: 28px;
+        }
+
+        .eyebrow {
+            text-transform: uppercase;
+            letter-spacing: 0.14em;
+            font-size: 12px;
+            color: var(--accent);
+            font-weight: 700;
+            margin-bottom: 8px;
+        }
+
+        h1, h2, h3 {
+            margin: 0 0 12px;
+            line-height: 1.2;
+        }
+
+        h1 {
+            font-size: 34px;
+        }
+
+        h2 {
+            font-size: 24px;
+            margin-top: 34px;
+            padding-bottom: 8px;
+            border-bottom: 2px solid var(--accent-soft);
+        }
+
+        h3 {
+            font-size: 18px;
+            margin-top: 24px;
+        }
+
+        p {
+            margin: 10px 0;
+        }
+
+        .muted {
+            color: var(--muted);
+        }
+
+        .meta {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 10px 20px;
+            margin-top: 18px;
+        }
+
+        .meta div,
+        .card,
+        .callout {
+            background: var(--panel);
+            border: 1px solid var(--line);
+            border-radius: 14px;
+        }
+
+        .meta div {
+            padding: 12px 14px;
+        }
+
+        .meta strong {
+            display: block;
+            font-size: 12px;
+            color: var(--muted);
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            margin-bottom: 4px;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 16px;
+        }
+
+        .card {
+            padding: 18px 18px 16px;
+        }
+
+        .card h3 {
+            margin-top: 0;
+        }
+
+        .flow {
+            counter-reset: step;
+            padding: 0;
+            margin: 18px 0;
+            list-style: none;
+        }
+
+        .flow li {
+            counter-increment: step;
+            margin: 0 0 14px;
+            padding: 16px 18px 16px 58px;
+            position: relative;
+            border: 1px solid var(--line);
+            border-radius: 14px;
+            background: #fff;
+        }
+
+        .flow li::before {
+            content: counter(step);
+            position: absolute;
+            top: 14px;
+            left: 16px;
+            width: 28px;
+            height: 28px;
+            border-radius: 999px;
+            background: var(--accent);
+            color: #fff;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+        }
+
+        .callout {
+            padding: 16px 18px;
+            margin: 16px 0;
+        }
+
+        .callout strong {
+            color: var(--accent);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 14px 0 20px;
+            font-size: 14px;
+        }
+
+        th, td {
+            border: 1px solid var(--line);
+            padding: 10px 12px;
+            vertical-align: top;
+            text-align: left;
+        }
+
+        th {
+            background: var(--accent-soft);
+        }
+
+        ul {
+            margin: 8px 0 12px 20px;
+        }
+
+        code {
+            background: #eff3f8;
+            border: 1px solid #dde5f0;
+            border-radius: 6px;
+            padding: 1px 6px;
+            font-family: Consolas, "Courier New", monospace;
+            font-size: 0.95em;
+        }
+
+        .pill {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 999px;
+            font-size: 12px;
+            font-weight: 700;
+            margin-right: 8px;
+            margin-bottom: 8px;
+            border: 1px solid var(--line);
+            background: #fff;
+        }
+
+        .status-pending { color: var(--warn); }
+        .status-active { color: var(--ok); }
+
+        .footnote {
+            margin-top: 32px;
+            color: var(--muted);
+            font-size: 13px;
+        }
+
+        @media print {
+            .page {
+                max-width: none;
+                padding: 22px 28px 30px;
+            }
+
+            .hero,
+            .card,
+            .callout,
+            .flow li {
+                break-inside: avoid;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="page">
+        <section class="hero">
+            <div class="eyebrow">Moodle Local Plugin Documentation</div>
+            <h1>Spot Award Plugin</h1>
+            <p>
+                This document describes the <code>local_spotaward</code> plugin, including its business flow,
+                user roles, features, settings page, notifications, reporting, and certificate process.
+            </p>
+            <p class="muted">
+                Prepared from the current codebase in this workspace.
+            </p>
+            <div class="meta">
+                <div>
+                    <strong>Plugin Component</strong>
+                    <span><code>local_spotaward</code></span>
+                </div>
+                <div>
+                    <strong>Release</strong>
+                    <span>1.1.0</span>
+                </div>
+                <div>
+                    <strong>Plugin Version</strong>
+                    <span>2026042212</span>
+                </div>
+                <div>
+                    <strong>Maturity</strong>
+                    <span>Beta</span>
+                </div>
+            </div>
+        </section>
+
+        <h2>1. Purpose</h2>
+        <p>
+            The Spot Award plugin manages recognition nominations for students inside Moodle. It allows mentors
+            or nominators to create nominations, routes them to a Program Manager for review, passes approved
+            cases to the SS Team for processing, supports certificate generation and distribution, and provides
+            dashboards and performance reporting.
+        </p>
+
+        <h2>2. High-Level Features</h2>
+        <div class="grid">
+            <div class="card">
+                <h3>Nomination Management</h3>
+                <ul>
+                    <li>Course-based nomination form for students</li>
+                    <li>Draft entry workflow before final submission</li>
+                    <li>Multiple students per submission</li>
+                    <li>Automatic award description generation by category and module</li>
+                </ul>
+            </div>
+            <div class="card">
+                <h3>Review Workflow</h3>
+                <ul>
+                    <li>Program Manager approval or rejection per student</li>
+                    <li>Approve-all shortcut for pending items</li>
+                    <li>Status tracking and history</li>
+                    <li>Role-based dashboard visibility</li>
+                </ul>
+            </div>
+            <div class="card">
+                <h3>SS Team Processing</h3>
+                <ul>
+                    <li>Continue processing approved nominations</li>
+                    <li>Close rejected tickets</li>
+                    <li>Share PR documents to admin</li>
+                    <li>Close complete records</li>
+                </ul>
+            </div>
+            <div class="card">
+                <h3>Certificates and Reporting</h3>
+                <ul>
+                    <li>Beautiful Certificate template integration</li>
+                    <li>Generate, view, download, and bulk-download certificates</li>
+                    <li>Email certificates to students</li>
+                    <li>Course and student performance reports</li>
+                </ul>
+            </div>
+        </div>
+
+        <h2>3. User Roles and Access</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Role</th>
+                    <th>Main Purpose</th>
+                    <th>How It Is Mapped</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>Nominator</td>
+                    <td>Creates nominations from the form</td>
+                    <td>Role shortname comes from plugin setting <code>nominator_role</code></td>
+                </tr>
+                <tr>
+                    <td>Program Manager</td>
+                    <td>Reviews, approves, or rejects nominations</td>
+                    <td>Role shortname comes from <code>program_manager_role</code></td>
+                </tr>
+                <tr>
+                    <td>SS Team</td>
+                    <td>Handles post-approval processing and admin sharing</td>
+                    <td>Role shortname comes from <code>ss_team_role</code></td>
+                </tr>
+                <tr>
+                    <td>Manager</td>
+                    <td>Accesses manager dashboard and high-level oversight</td>
+                    <td>Role shortname comes from <code>manager_role</code></td>
+                </tr>
+                <tr>
+                    <td>Student</td>
+                    <td>Used for report and nomination student lookup logic</td>
+                    <td>Role shortname comes from <code>student_role</code></td>
+                </tr>
+                <tr>
+                    <td>Site Admin</td>
+                    <td>Can configure settings and access special administrative operations</td>
+                    <td>Standard Moodle administrative access</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <p>Key capabilities defined by the plugin:</p>
+        <div>
+            <span class="pill">local/spotaward:nominate</span>
+            <span class="pill">local/spotaward:review</span>
+            <span class="pill">local/spotaward:viewreports</span>
+            <span class="pill">local/spotaward:sstask</span>
+            <span class="pill">local/spotaward:managetemplate</span>
+            <span class="pill">local/spotaward:downloadcert</span>
+            <span class="pill">local/spotaward:viewcert</span>
+        </div>
+
+        <h2>4. Main Business Flow</h2>
+        <ol class="flow">
+            <li>
+                <strong>Nominator opens the Nomination Form</strong><br>
+                The form is available to users who can access the plugin and have the nominator role.
+            </li>
+            <li>
+                <strong>Nominator selects course and students</strong><br>
+                Students are loaded dynamically based on the selected course, and program managers are also loaded for that course.
+            </li>
+            <li>
+                <strong>Nominator adds draft entries</strong><br>
+                Each draft entry captures the student set, module, award category, professional, award description, and selected Program Manager.
+            </li>
+            <li>
+                <strong>Shared draft values stay fixed</strong><br>
+                After the first draft entry is added, the form keeps the same course, module, professional, and Program Manager for later draft additions until <code>Clear Draft</code> is used.
+            </li>
+            <li>
+                <strong>Nominator submits nominations</strong><br>
+                All draft entries are persisted into nomination tables, and a Program Manager notification is sent.
+            </li>
+            <li>
+                <strong>Program Manager reviews each student item</strong><br>
+                The Program Manager can approve individual items, reject individual items with reason, or approve all pending items.
+            </li>
+            <li>
+                <strong>Approved items move to SS Team</strong><br>
+                The SS Team receives notification and can continue the process.
+            </li>
+            <li>
+                <strong>Certificates are generated for approved items</strong><br>
+                Once items move into SS Team progress, certificate generation is available through the configured Beautiful Certificate template.
+            </li>
+            <li>
+                <strong>SS Team shares PR documents to Admin</strong><br>
+                The SS Team can upload a PR document and optionally attach certificates when notifying the configured admin recipient.
+            </li>
+            <li>
+                <strong>SS Team closes tickets or closes the record</strong><br>
+                Rejected tickets can be closed individually, and a full nomination record can be closed when processing is complete.
+            </li>
+            <li>
+                <strong>Students can receive certificates by email</strong><br>
+                The plugin can email certificates to all approved students from the completed nomination.
+            </li>
+        </ol>
+
+        <h2>5. Dashboards and Pages</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Page</th>
+                    <th>Audience</th>
+                    <th>Main Purpose</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>Nomination Form</td>
+                    <td>Nominator</td>
+                    <td>Create draft entries, submit nominations, review draft preview, and view own submission history</td>
+                </tr>
+                <tr>
+                    <td>Program Manager Dashboard</td>
+                    <td>Program Manager</td>
+                    <td>View incoming submissions and open submission detail for review</td>
+                </tr>
+                <tr>
+                    <td>SS Team Dashboard</td>
+                    <td>SS Team</td>
+                    <td>Track approved or in-progress cases and continue operational processing</td>
+                </tr>
+                <tr>
+                    <td>Manager Dashboard</td>
+                    <td>Manager</td>
+                    <td>High-level visibility, filters, and nomination oversight</td>
+                </tr>
+                <tr>
+                    <td>Submission Detail</td>
+                    <td>PM, SS Team, Manager, authorized users</td>
+                    <td>Review item-level status, reports, rejection reasons, and certificate actions</td>
+                </tr>
+                <tr>
+                    <td>Performance Report</td>
+                    <td>Authorized users</td>
+                    <td>View course-level or student-level academic activity data</td>
+                </tr>
+                <tr>
+                    <td>Email Template Settings</td>
+                    <td>Site Admin</td>
+                    <td>Configure all message subjects and bodies</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <h2>6. Nomination Form Details</h2>
+        <p>The nomination form contains these main fields:</p>
+        <ul>
+            <li>Course</li>
+            <li>Students</li>
+            <li>Module</li>
+            <li>Award Category</li>
+            <li>Professional</li>
+            <li>Program Manager</li>
+        </ul>
+
+        <div class="callout">
+            <strong>Important current behavior:</strong> once a draft exists, the form locks
+            <code>Course</code>, <code>Module</code>, <code>Professional</code>, and
+            <code>Program Manager</code> until the user clicks <code>Clear Draft</code>.
+        </div>
+
+        <h3>Additional form behavior</h3>
+        <ul>
+            <li>Students are loaded dynamically through AJAX after course selection.</li>
+            <li>Program Manager options are loaded automatically for the selected course.</li>
+            <li>The first Program Manager in the returned list is pre-selected.</li>
+            <li>For course names containing <code>24024C</code>, the professional is forced to <code>Embedded Professional</code>.</li>
+            <li>Award descriptions are auto-generated from category and module when a template exists.</li>
+            <li>If no generated description exists, raw description content can still be preserved for certificate output.</li>
+        </ul>
+
+        <h2>7. Submission Review and Status Flow</h2>
+        <p>The plugin uses a nomination-level status and an item-level status per student.</p>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Status</th>
+                    <th>Meaning</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><span class="status-pending">pending</span></td>
+                    <td>New submission waiting for Program Manager review</td>
+                </tr>
+                <tr>
+                    <td><span class="status-active">underreview</span></td>
+                    <td>Review is in progress</td>
+                </tr>
+                <tr>
+                    <td><span class="status-active">ssteamprogress</span></td>
+                    <td>Approved and currently being handled by the SS Team</td>
+                </tr>
+                <tr>
+                    <td>rejected</td>
+                    <td>Rejected by Program Manager, with reason captured</td>
+                </tr>
+                <tr>
+                    <td>closed</td>
+                    <td>Item or overall record closed after processing</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <h3>Program Manager actions</h3>
+        <ul>
+            <li>Approve one student item</li>
+            <li>Reject one student item with rejection reason</li>
+            <li>Approve all pending items at once</li>
+            <li>View item-level learner report from the submission screen</li>
+        </ul>
+
+        <h3>SS Team actions</h3>
+        <ul>
+            <li>View all certificates for approved students</li>
+            <li>Download all certificates</li>
+            <li>Email certificates to students</li>
+            <li>Share PR document to configured admin</li>
+            <li>Close rejected tickets</li>
+            <li>Close the complete record</li>
+        </ul>
+
+        <h2>8. Performance Reports</h2>
+        <p>
+            The report module supports both course-level and learner-level reporting. It can be opened from the
+            top-level report page or from the submission detail screen for a specific student item.
+        </p>
+
+        <h3>Report highlights</h3>
+        <ul>
+            <li>Course selector for authorized users</li>
+            <li>Activity type filter</li>
+            <li>Student-level detailed report</li>
+            <li>Course-level summary report</li>
+            <li>Activity categories such as assignments, projects, quiz, attendance, class works, and template programs</li>
+            <li>Completion and percentage-based reporting logic</li>
+        </ul>
+
+        <h2>9. Certificate Features</h2>
+        <p>
+            Certificate generation is integrated with the Beautiful Certificate plugin. The Spot Award plugin selects
+            a configured Beautiful Certificate template, fills placeholders with nomination and student data, and
+            stores generated PDFs in Moodle file storage.
+        </p>
+
+        <h3>Certificate capabilities</h3>
+        <ul>
+            <li>Generate one certificate per approved nomination item</li>
+            <li>View single certificate inline in browser</li>
+            <li>Download single certificate</li>
+            <li>View all certificates in merged PDF form</li>
+            <li>Download all certificates as ZIP</li>
+            <li>Email certificates to students</li>
+            <li>Attach certificates to admin PR communication if selected</li>
+        </ul>
+
+        <h3>Certificate placeholders</h3>
+        <p>The settings page exposes certificate placeholder mappings such as:</p>
+        <ul>
+            <li>Student name, first name, last name, email, username</li>
+            <li>Course name and shortname</li>
+            <li>Module name</li>
+            <li>Professional</li>
+            <li>Total students count</li>
+            <li>Award category and award description</li>
+            <li>Nomination date and issue date</li>
+            <li>Nominated by and presented by</li>
+            <li>Nominator and Program Manager email</li>
+        </ul>
+
+        <h2>10. Notifications</h2>
+        <p>
+            The plugin sends configurable email notifications and can also mirror those notifications to Zoho Cliq
+            when bot settings are configured.
+        </p>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Template</th>
+                    <th>When It Triggers</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>Submission to Program Manager</td>
+                    <td>When the nominator submits draft entries as a nomination</td>
+                </tr>
+                <tr>
+                    <td>Program Manager approval to SS Team</td>
+                    <td>When items are approved and handed over for SS Team action</td>
+                </tr>
+                <tr>
+                    <td>Program Manager decision to Mentor</td>
+                    <td>When the Program Manager finishes review</td>
+                </tr>
+                <tr>
+                    <td>SS Team PR document to Admin</td>
+                    <td>When SS Team uploads and sends the PR document</td>
+                </tr>
+                <tr>
+                    <td>Record closed notification</td>
+                    <td>When SS Team closes the nomination record</td>
+                </tr>
+                <tr>
+                    <td>Student certificate email</td>
+                    <td>When SS Team shares certificates to students</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <p>Available template placeholders include:</p>
+        <p>
+            <code>{{course}}</code>, <code>{{module}}</code>, <code>{{mentor_name}}</code>,
+            <code>{{program_manager_name}}</code>, <code>{{nominator_name}}</code>,
+            <code>{{recipient_name}}</code>, <code>{{total_students}}</code>,
+            <code>{{moodle_link}}</code>, <code>{{description}}</code>, <code>{{status}}</code>,
+            <code>{{pm_comments}}</code>, <code>{{closure_date}}</code>, <code>{{closed_by}}</code>,
+            <code>{{student_name}}</code>, <code>{{student_firstname}}</code>,
+            <code>{{student_lastname}}</code>, <code>{{student_email}}</code>,
+            <code>{{student_username}}</code>, <code>{{award_category}}</code>,
+            <code>{{award_description}}</code>, <code>{{certificate_filename}}</code>
+        </p>
+
+        <h2>11. Settings Page Reference</h2>
+        <p>
+            The plugin settings page is added under Moodle local plugins. It contains operational settings, role mapping,
+            admin notification configuration, Zoho Cliq setup, email template access, and certificate configuration.
+        </p>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Setting / Section</th>
+                    <th>Purpose</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>Show in top menu</td>
+                    <td>Controls whether the Spot Award link is inserted into the top navigation menu</td>
+                </tr>
+                <tr>
+                    <td>Nominator role shortname</td>
+                    <td>Maps the Moodle role shortname used for nominators</td>
+                </tr>
+                <tr>
+                    <td>Program Manager role shortname</td>
+                    <td>Maps the Moodle role shortname used for Program Managers</td>
+                </tr>
+                <tr>
+                    <td>SS Team role shortname</td>
+                    <td>Maps the Moodle role shortname used for SS Team users</td>
+                </tr>
+                <tr>
+                    <td>Manager role shortname</td>
+                    <td>Maps the Moodle role shortname used for managers</td>
+                </tr>
+                <tr>
+                    <td>Student role shortname</td>
+                    <td>Maps the Moodle role shortname used for students</td>
+                </tr>
+                <tr>
+                    <td>Notification Team Settings</td>
+                    <td>Section heading for admin recipient configuration</td>
+                </tr>
+                <tr>
+                    <td>Admin Team Member</td>
+                    <td>Selects the admin recipient who can receive PR documents from SS Team</td>
+                </tr>
+                <tr>
+                    <td>Zoho Cliq Settings</td>
+                    <td>Section for bot URL and API key used to mirror notifications</td>
+                </tr>
+                <tr>
+                    <td>Zoho Cliq bot URL</td>
+                    <td>Bot endpoint without the API key parameter</td>
+                </tr>
+                <tr>
+                    <td>Zoho Cliq API key</td>
+                    <td>API key appended as the bot request key</td>
+                </tr>
+                <tr>
+                    <td>Email Template Settings</td>
+                    <td>Shortcut button to the dedicated email template configuration page</td>
+                </tr>
+                <tr>
+                    <td>Certificate Template</td>
+                    <td>Selects the Beautiful Certificate model used for generated certificates</td>
+                </tr>
+                <tr>
+                    <td>Manage Template</td>
+                    <td>Shortcut link to the Beautiful Certificate template management page</td>
+                </tr>
+                <tr>
+                    <td>Available Certificate Fields</td>
+                    <td>Displays the placeholder map that can be used in certificate HTML</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <h2>12. Email Template Page Reference</h2>
+        <p>The dedicated email template page contains editable subject and body fields for:</p>
+        <ul>
+            <li>Submission Notification to Program Manager</li>
+            <li>Program Manager Approval Notification to SS Team</li>
+            <li>Program Manager Decision Notification to Mentor</li>
+            <li>SS Team PR Document Notification to Admin</li>
+            <li>Record Closed Notification</li>
+            <li>Student Certificate Email</li>
+        </ul>
+
+        <h2>13. Core Data Objects</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Object</th>
+                    <th>Purpose</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>Nomination</td>
+                    <td>Header-level record containing nominator, Program Manager, course, module, professional, status, and aggregate description</td>
+                </tr>
+                <tr>
+                    <td>Nomination Item</td>
+                    <td>Student-level record containing student, category, description, status, and rejection reason</td>
+                </tr>
+                <tr>
+                    <td>Status Track</td>
+                    <td>History trail for item and nomination status changes</td>
+                </tr>
+                <tr>
+                    <td>Certificate File</td>
+                    <td>Generated PDF stored in Moodle file storage per approved student item</td>
+                </tr>
+                <tr>
+                    <td>Draft Session Entries</td>
+                    <td>Temporary session-based nomination staging area before final submission</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <h2>14. Operational Notes</h2>
+        <div class="callout">
+            <strong>Menu visibility:</strong> the plugin can place a Spot Award link in Moodle top navigation when enabled.
+        </div>
+        <div class="callout">
+            <strong>Course restrictions:</strong> nominators can only nominate within courses they are allowed to use, and students are loaded only from those courses.
+        </div>
+        <div class="callout">
+            <strong>Program Manager selection:</strong> if a specific Program Manager role is configured, those users are used; otherwise the plugin falls back to teachers and editing teachers in the course.
+        </div>
+        <div class="callout">
+            <strong>Certificate dependency:</strong> certificate generation depends on the Beautiful Certificate plugin and a configured template.
+        </div>
+
+        <h2>15. File Reference</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>File</th>
+                    <th>Responsibility</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><code>index.php</code></td>
+                    <td>Main dashboard entry point and role-specific landing views</td>
+                </tr>
+                <tr>
+                    <td><code>submission.php</code></td>
+                    <td>Submission detail screen and review / processing actions</td>
+                </tr>
+                <tr>
+                    <td><code>report.php</code></td>
+                    <td>Course and student performance reporting</td>
+                </tr>
+                <tr>
+                    <td><code>settings.php</code></td>
+                    <td>Admin settings page definition</td>
+                </tr>
+                <tr>
+                    <td><code>email_templates.php</code></td>
+                    <td>Email template configuration page</td>
+                </tr>
+                <tr>
+                    <td><code>share_admin.php</code></td>
+                    <td>PR document upload and admin sharing flow</td>
+                </tr>
+                <tr>
+                    <td><code>close_record.php</code></td>
+                    <td>Close-record workflow for SS Team</td>
+                </tr>
+                <tr>
+                    <td><code>view_certificate.php</code></td>
+                    <td>Inline view or download for certificates</td>
+                </tr>
+                <tr>
+                    <td><code>classes/local/api.php</code></td>
+                    <td>Core business logic, notifications, certificates, reports, and status handling</td>
+                </tr>
+                <tr>
+                    <td><code>classes/local/constants.php</code></td>
+                    <td>Role IDs, module list, categories, and professional constants</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <p class="footnote">
+            End of document.
+        </p>
+    </div>
+</body>
+</html>

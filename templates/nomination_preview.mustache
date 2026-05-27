@@ -1,0 +1,44 @@
+<div class="spotaward-card">
+    <div class="spotaward-card-header">
+        <strong>{{#str}}draftentries, local_spotaward{{/str}}</strong>
+    </div>
+    <div class="spotaward-card-body">
+        {{#hasrows}}
+        <div class="spotaward-table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>{{#str}}studentname, local_spotaward{{/str}}</th>
+                        <th>{{#str}}studentemail, local_spotaward{{/str}}</th>
+                        <th>{{#str}}admissionid, local_spotaward{{/str}}</th>
+                        <th>{{#str}}batchname, local_spotaward{{/str}}</th>
+                        <th>{{#str}}module, local_spotaward{{/str}}</th>
+                        <th>{{#str}}mentorname, local_spotaward{{/str}}</th>
+                        <th>{{#str}}awardcategory, local_spotaward{{/str}}</th>
+                        <th>{{#str}}professional, local_spotaward{{/str}}</th>
+                        <th>{{#str}}awarddescription, local_spotaward{{/str}}</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {{#rows}}
+                    <tr>
+                        <td>{{studentname}}</td>
+                        <td>{{studentemail}}</td>
+                        <td>{{admissionid}}</td>
+                        <td>{{batchname}}</td>
+                        <td>{{module}}</td>
+                        <td>{{mentorname}}</td>
+                        <td>{{awardcategory}}</td>
+                        <td>{{professional}}</td>
+                        <td>{{awarddescription}}</td>
+                    </tr>
+                    {{/rows}}
+                </tbody>
+            </table>
+        </div>
+        {{/hasrows}}
+        {{^hasrows}}
+        <p class="spotaward-empty">{{emptytext}}</p>
+        {{/hasrows}}
+    </div>
+</div>

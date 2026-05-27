@@ -1,0 +1,22 @@
+<div class="spotaward-summary-grid">
+    {{#showpending}}
+    <div class="spotaward-stat-card is-warning">
+        <div class="spotaward-stat-value">{{pending}}</div>
+        <div class="spotaward-stat-label">{{pendinglabel}}</div>
+    </div>
+    {{/showpending}}
+    <div class="spotaward-stat-card is-ssteam">
+        <div class="spotaward-stat-value">{{ssteamprogress}}</div>
+        <div class="spotaward-stat-label">{{ssteamprogresslabel}}</div>
+    </div>
+    {{#showrejected}}
+    <div class="spotaward-stat-card is-danger">
+        <div class="spotaward-stat-value">{{rejected}}</div>
+        <div class="spotaward-stat-label">{{rejectedlabel}}</div>
+    </div>
+    {{/showrejected}}
+    <div class="spotaward-stat-card is-primary">
+        <div class="spotaward-stat-value">{{closed}}</div>
+        <div class="spotaward-stat-label">{{closedlabel}}</div>
+    </div>
+</div>

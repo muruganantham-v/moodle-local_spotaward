@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<XMLDB PATH="local/spotaward/db" VERSION="2026042216" COMMENT="XMLDB file for local_spotaward"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:noNamespaceSchemaLocation="../../../lib/xmldb/xmldb.xsd">
+    <TABLES>
+        <TABLE NAME="spotaward_nominations" COMMENT="Parent nomination submissions">
+            <FIELDS>
+                <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+                <FIELD NAME="nominatorid" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"/>
+                <FIELD NAME="programmanagerid" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"/>
+                <FIELD NAME="maacexecutiveid" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"/>
+                <FIELD NAME="courseid" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"/>
+                <FIELD NAME="modulename" TYPE="char" LENGTH="255" NOTNULL="true" DEFAULT=""/>
+                <FIELD NAME="awardcategory" TYPE="char" LENGTH="255" NOTNULL="true" DEFAULT=""/>
+                <FIELD NAME="professional" TYPE="char" LENGTH="255" NOTNULL="true" DEFAULT=""/>
+                <FIELD NAME="awarddescription" TYPE="text" NOTNULL="false"/>
+                <FIELD NAME="studentcount" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"/>
+                <FIELD NAME="status" TYPE="char" LENGTH="20" NOTNULL="true" DEFAULT="pending"/>
+                <FIELD NAME="adminsharedtime" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"/>
+                <FIELD NAME="adminsharedby" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"/>
+                <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"/>
+                <FIELD NAME="timemodified" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"/>
+            </FIELDS>
+            <KEYS>
+                <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+            </KEYS>
+            <INDEXES>
+                <INDEX NAME="nominator_idx" UNIQUE="false" FIELDS="nominatorid"/>
+                <INDEX NAME="programmanager_idx" UNIQUE="false" FIELDS="programmanagerid"/>
+                <INDEX NAME="maacexecutive_idx" UNIQUE="false" FIELDS="maacexecutiveid"/>
+                <INDEX NAME="course_idx" UNIQUE="false" FIELDS="courseid"/>
+                <INDEX NAME="status_idx" UNIQUE="false" FIELDS="status"/>
+            </INDEXES>
+        </TABLE>
+        <TABLE NAME="spotaward_nomination_items" COMMENT="Student level nomination records">
+            <FIELDS>
+                <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+                <FIELD NAME="nominationid" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"/>
+                <FIELD NAME="studentid" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"/>
+                <FIELD NAME="awardcategory" TYPE="char" LENGTH="255" NOTNULL="true" DEFAULT=""/>
+                <FIELD NAME="professional" TYPE="char" LENGTH="255" NOTNULL="true" DEFAULT=""/>
+                <FIELD NAME="awarddescription" TYPE="text" NOTNULL="false"/>
+                <FIELD NAME="status" TYPE="char" LENGTH="20" NOTNULL="true" DEFAULT="pending"/>
+                <FIELD NAME="rejectionreason" TYPE="text" NOTNULL="false"/>
+                <FIELD NAME="closuredate" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"/>
+                <FIELD NAME="reviewedby" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"/>
+                <FIELD NAME="timereviewed" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"/>
+            </FIELDS>
+            <KEYS>
+                <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+                <KEY NAME="nomination_fk" TYPE="foreign" FIELDS="nominationid" REFTABLE="spotaward_nominations" REFFIELDS="id"/>
+            </KEYS>
+            <INDEXES>
+                <INDEX NAME="nomination_idx" UNIQUE="false" FIELDS="nominationid"/>
+                <INDEX NAME="student_idx" UNIQUE="false" FIELDS="studentid"/>
+                <INDEX NAME="item_status_idx" UNIQUE="false" FIELDS="status"/>
+            </INDEXES>
+        </TABLE>
+        <TABLE NAME="spotaward_status_track" COMMENT="Status tracking audit trail">
+            <FIELDS>
+                <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+                <FIELD NAME="nominationid" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"/>
+                <FIELD NAME="nominationitemid" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"/>
+                <FIELD NAME="actorid" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"/>
+                <FIELD NAME="fromstatus" TYPE="char" LENGTH="20" NOTNULL="true" DEFAULT=""/>
+                <FIELD NAME="tostatus" TYPE="char" LENGTH="20" NOTNULL="true" DEFAULT=""/>
+                <FIELD NAME="reason" TYPE="text" NOTNULL="false"/>
+                <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"/>
+            </FIELDS>
+            <KEYS>
+                <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+                <KEY NAME="track_nomination_fk" TYPE="foreign" FIELDS="nominationid" REFTABLE="spotaward_nominations" REFFIELDS="id"/>
+                <KEY NAME="track_item_fk" TYPE="foreign" FIELDS="nominationitemid" REFTABLE="spotaward_nomination_items" REFFIELDS="id"/>
+            </KEYS>
+            <INDEXES>
+                <INDEX NAME="track_nomination_idx" UNIQUE="false" FIELDS="nominationid"/>
+                <INDEX NAME="track_item_idx" UNIQUE="false" FIELDS="nominationitemid"/>
+            </INDEXES>
+        </TABLE>
+    </TABLES>
+</XMLDB>

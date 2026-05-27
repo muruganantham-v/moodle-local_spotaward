@@ -1,0 +1,38 @@
+<div class="spotaward-card">
+    <div class="spotaward-card-header">
+        <strong>{{#str}}submissionhistory, local_spotaward{{/str}}</strong>
+    </div>
+    <div class="spotaward-card-body">
+        {{#hasrows}}
+        <div class="spotaward-table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>{{#str}}submissionid, local_spotaward{{/str}}</th>
+                        <th>{{#str}}submitteddate, local_spotaward{{/str}}</th>
+                        <th>{{#str}}course, local_spotaward{{/str}}</th>
+                        <th>{{#str}}module, local_spotaward{{/str}}</th>
+                        <th>{{#str}}status, local_spotaward{{/str}}</th>
+                        <th>{{#str}}actions, local_spotaward{{/str}}</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {{#rows}}
+                    <tr>
+                        <td>{{id}}</td>
+                        <td>{{submitteddate}}</td>
+                        <td>{{coursename}}</td>
+                        <td>{{module}}</td>
+                        <td>{{statuslabel}}</td>
+                        <td><a href="{{detailsurl}}">{{#str}}viewdetails, local_spotaward{{/str}}</a></td>
+                    </tr>
+                    {{/rows}}
+                </tbody>
+            </table>
+        </div>
+        {{/hasrows}}
+        {{^hasrows}}
+        <p class="spotaward-empty">{{emptytext}}</p>
+        {{/hasrows}}
+    </div>
+</div>

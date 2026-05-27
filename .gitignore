@@ -1,0 +1,13 @@
+# Deploy config (contains server IPs and credentials)
+scripts/deploy_cluster.env
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+
+# PHP
+*.log
