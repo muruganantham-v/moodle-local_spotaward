@@ -3515,31 +3515,67 @@ final class api {
      * @return string|null
      */
     private static function get_report_course_profile(stdClass $course): ?string {
-        $haystack = \core_text::strtolower(trim(($course->shortname ?? '') . ' ' . ($course->fullname ?? '')));
+        // Match by shortname prefix first — same source of truth as constants::is_allowed_nomination_course_shortname().
+        // Longer prefixes listed before shorter ones to avoid partial matches (e.g. ECIP-GW before ECIP-).
+        $shortname = \core_text::strtoupper(trim($course->shortname ?? ''));
+        $prefixmap = [
+            'ADVC102'                  => 'advance_c_programming',
+            'DS104'                    => 'dsa',
+            'MC105'                    => 'microcontrollers',
+            'LI106'                    => 'linux_networking',
+            'ECIP-GW_IOT_PROTOCOL102'  => 'iot_gateway',
+            'ECIP-PYTHON'              => 'python_programming',
+            'ECIP-ARDUINO'             => 'arduino',
+            'ECEP-ELARM'               => 'embedded_linux',
+            'IOTCLOUD'                 => 'iot_cloud',
+            'LS101'                    => 'linux_systems',
+            'CPP103'                   => 'cpp_programming',
+            'QT107'                    => 'qt_programming',
+        ];
+        foreach ($prefixmap as $prefix => $profile) {
+            if (\core_text::strpos($shortname, $prefix) === 0) {
+                return $profile;
+            }
+        }
 
-        if (strpos($haystack, 'advance c programming') !== false) {
+        // Fallback: fullname text matching for courses without a recognised shortname prefix.
+        $haystack = \core_text::strtolower(trim($course->fullname ?? ''));
+
+        if (strpos($haystack, 'advance') !== false && strpos($haystack, 'c programming') !== false) {
             return 'advance_c_programming';
         }
-
-        if (strpos($haystack, 'data structure and algorithms') !== false || preg_match('/\bdsa\b/', $haystack)) {
+        if (strpos($haystack, 'data structure') !== false || preg_match('/\bdsa\b/', $haystack)) {
             return 'dsa';
         }
-
-        if (strpos($haystack, 'microcontrollers') !== false) {
+        if (strpos($haystack, 'microcontroller') !== false) {
             return 'microcontrollers';
         }
-
-        if (strpos($haystack, 'linux internals and tcp/ip networking') !== false ||
-            (strpos($haystack, 'linux internals') !== false && strpos($haystack, 'tcp/ip networking') !== false)) {
+        if (strpos($haystack, 'linux internals') !== false) {
             return 'linux_networking';
         }
-
         if (strpos($haystack, 'python programming') !== false) {
             return 'python_programming';
         }
-
         if (strpos($haystack, 'arduino') !== false) {
             return 'arduino';
+        }
+        if (strpos($haystack, 'embedded linux') !== false || strpos($haystack, 'elarm') !== false) {
+            return 'embedded_linux';
+        }
+        if (strpos($haystack, 'linux systems') !== false) {
+            return 'linux_systems';
+        }
+        if (strpos($haystack, 'c++ programming') !== false || strpos($haystack, 'cpp programming') !== false) {
+            return 'cpp_programming';
+        }
+        if (strpos($haystack, 'qt programming') !== false) {
+            return 'qt_programming';
+        }
+        if (strpos($haystack, 'iot') !== false && strpos($haystack, 'gateway') !== false) {
+            return 'iot_gateway';
+        }
+        if (strpos($haystack, 'iot') !== false && strpos($haystack, 'cloud') !== false) {
+            return 'iot_cloud';
         }
 
         return null;
@@ -3630,7 +3666,7 @@ final class api {
                 ];
 
             case 'vpl':
-                if ($profile === 'advance_c_programming') {
+                if (in_array($profile, ['advance_c_programming', 'cpp_programming', 'qt_programming'], true)) {
                     if ($prefix === 'C') {
                         return [
                             'category' => 'assignments',
@@ -3655,7 +3691,10 @@ final class api {
                 ];
 
             case 'assign':
-                if (in_array($profile, ['advance_c_programming', 'dsa', 'linux_networking', 'python_programming'], true)) {
+                if (in_array($profile, [
+                    'advance_c_programming', 'dsa', 'linux_networking', 'python_programming',
+                    'linux_systems', 'cpp_programming', 'qt_programming', 'embedded_linux',
+                ], true)) {
                     return [
                         'category' => 'projects',
                         'categorylabel' => get_string('projects', 'local_spotaward'),
@@ -3663,7 +3702,7 @@ final class api {
                     ];
                 }
 
-                if (in_array($profile, ['microcontrollers', 'arduino'], true)) {
+                if (in_array($profile, ['microcontrollers', 'arduino', 'iot_gateway', 'iot_cloud'], true)) {
                     if ($prefix === 'P') {
                         return [
                             'category' => 'projects',
