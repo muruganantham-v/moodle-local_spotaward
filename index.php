@@ -381,8 +381,7 @@ if ($view === 'programmanager' && $ispm) {
 
     echo html_writer::start_div('spotaward-shell');
     echo html_writer::tag('h3', get_string('programmanagerdashboard', 'local_spotaward'), ['class' => 'spotaward-section-title']);
-    $dashboard = api::get_manager_dashboard_data(0, $USER->id);
-    echo $output->manager_summary($dashboard['counts'], true);
+    echo $output->manager_summary(api::get_nomination_counts(0, $USER->id), true);
     echo html_writer::start_div('spotaward-subtabs mb-4');
     echo html_writer::link(
         new moodle_url('/local/spotaward/index.php', ['view' => 'programmanager', 'section' => 'active']),

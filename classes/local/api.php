@@ -3245,28 +3245,34 @@ final class api {
         $pmoptions = [0 => get_string('allprogrammanagers', 'local_spotaward')];
         $maacoptions = [0 => get_string('allmaacexecutives', 'local_spotaward')];
 
-        $mentorsql = "SELECT DISTINCT u.id, u.firstname, u.lastname
-                        FROM {user} u
-                        JOIN {spotaward_nominations} n ON n.nominatorid = u.id
-                    ORDER BY u.firstname ASC, u.lastname ASC";
-        foreach ($DB->get_records_sql($mentorsql) as $mentor) {
-            $mentoroptions[$mentor->id] = fullname($mentor);
-        }
+        $sql = "SELECT u.id, u.firstname, u.lastname,
+                       u.firstnamephonetic, u.lastnamephonetic, u.middlename, u.alternatename,
+                       'mentor' AS roletype
+                  FROM {user} u
+                  JOIN {spotaward_nominations} n ON n.nominatorid = u.id
+             UNION
+                SELECT u.id, u.firstname, u.lastname,
+                       u.firstnamephonetic, u.lastnamephonetic, u.middlename, u.alternatename,
+                       'pm' AS roletype
+                  FROM {user} u
+                  JOIN {spotaward_nominations} n ON n.programmanagerid = u.id
+             UNION
+                SELECT u.id, u.firstname, u.lastname,
+                       u.firstnamephonetic, u.lastnamephonetic, u.middlename, u.alternatename,
+                       'maac' AS roletype
+                  FROM {user} u
+                  JOIN {spotaward_nominations} n ON n.maacexecutiveid = u.id
+              ORDER BY firstname ASC, lastname ASC";
 
-        $pmsql = "SELECT DISTINCT u.id, u.firstname, u.lastname
-                    FROM {user} u
-                    JOIN {spotaward_nominations} n ON n.programmanagerid = u.id
-                ORDER BY u.firstname ASC, u.lastname ASC";
-        foreach ($DB->get_records_sql($pmsql) as $pm) {
-            $pmoptions[$pm->id] = fullname($pm);
-        }
-
-        $maacsql = "SELECT DISTINCT u.id, u.firstname, u.lastname
-                      FROM {user} u
-                      JOIN {spotaward_nominations} n ON n.maacexecutiveid = u.id
-                  ORDER BY u.firstname ASC, u.lastname ASC";
-        foreach ($DB->get_records_sql($maacsql) as $maac) {
-            $maacoptions[$maac->id] = fullname($maac);
+        foreach ($DB->get_records_sql($sql) as $row) {
+            $name = fullname($row);
+            if ($row->roletype === 'mentor') {
+                $mentoroptions[$row->id] = $name;
+            } else if ($row->roletype === 'pm') {
+                $pmoptions[$row->id] = $name;
+            } else {
+                $maacoptions[$row->id] = $name;
+            }
         }
 
         return [$mentoroptions, $pmoptions, $maacoptions];
@@ -3467,6 +3473,10 @@ final class api {
      */
     private static function get_supported_report_courses(): array {
         global $DB;
+        static $cache = null;
+        if ($cache !== null) {
+            return $cache;
+        }
 
         $records = $DB->get_records_select('course', 'id <> :sitecourse', ['sitecourse' => SITEID], 'fullname ASC',
             'id, shortname, fullname');
@@ -3480,7 +3490,7 @@ final class api {
             $courses[$record->id] = format_string($record->fullname, true, ['context' => context_course::instance($record->id)]);
         }
 
-        return $courses;
+        return $cache = $courses;
     }
 
     /**
@@ -4247,6 +4257,55 @@ final class api {
     }
 
     /**
+     * Count nominations by status, optionally filtered by mentor/PM/MAAC.
+     *
+     * @param int $mentorid
+     * @param int $programmanagerid
+     * @param int $maacexecutiveid
+     * @return array keys: pending, rejected, ssteamprogress, closed
+     */
+    public static function get_nomination_counts(int $mentorid = 0, int $programmanagerid = 0,
+            int $maacexecutiveid = 0): array {
+        global $DB;
+
+        $params = [];
+        $where = [];
+        if ($mentorid) {
+            $where[] = 'n.nominatorid = :mentorid';
+            $params['mentorid'] = $mentorid;
+        }
+        if ($programmanagerid) {
+            $where[] = 'n.programmanagerid = :programmanagerid';
+            $params['programmanagerid'] = $programmanagerid;
+        }
+        if ($maacexecutiveid) {
+            $where[] = 'n.maacexecutiveid = :maacexecutiveid';
+            $params['maacexecutiveid'] = $maacexecutiveid;
+        }
+
+        $wheresql = $where ? ('WHERE ' . implode(' AND ', $where)) : '';
+
+        $counts = [
+            'pending' => 0,
+            'rejected' => 0,
+            'ssteamprogress' => 0,
+            'closed' => 0,
+        ];
+
+        $sql = "SELECT n.status, COUNT(1) AS cnt
+                  FROM {spotaward_nominations} n
+                 {$wheresql}
+              GROUP BY n.status";
+        foreach ($DB->get_records_sql($sql, $params) as $record) {
+            if (isset($counts[$record->status])) {
+                $counts[$record->status] = (int)$record->cnt;
+            }
+        }
+
+        return $counts;
+    }
+
+    /**
      * Get manager dashboard data.
      *
      * @param int $mentorid
@@ -4274,22 +4333,7 @@ final class api {
 
         $wheresql = $where ? ('WHERE ' . implode(' AND ', $where)) : '';
 
-        $counts = [
-            'pending' => 0,
-            'rejected' => 0,
-            'ssteamprogress' => 0,
-            'closed' => 0,
-        ];
-
-        $countsql = "SELECT n.status, COUNT(1) AS cnt
-                       FROM {spotaward_nominations} n
-                      {$wheresql}
-                   GROUP BY n.status";
-        foreach ($DB->get_records_sql($countsql, $params) as $record) {
-            if (isset($counts[$record->status])) {
-                $counts[$record->status] = (int)$record->cnt;
-            }
-        }
+        $counts = self::get_nomination_counts($mentorid, $programmanagerid, $maacexecutiveid);
 
         $statuswhere = '';
         if ($statusfilter === 'active') {
