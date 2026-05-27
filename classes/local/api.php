@@ -4291,7 +4291,7 @@ final class api {
                        (SELECT COUNT(1) FROM {spotaward_nomination_items} ni
                          WHERE ni.nominationid = n.id) AS totalitems,
                        (SELECT COUNT(1) FROM {spotaward_nomination_items} ni
-                         WHERE ni.nominationid = n.id AND ni.status <> 'pending') AS revieweditems,
+                         WHERE ni.nominationid = n.id AND ni.status IN ('ssteamprogress', 'rejected', 'closed')) AS revieweditems,
                        (SELECT COUNT(1) FROM {files} f
                          WHERE f.contextid = :syscontextid
                            AND f.component = 'local_spotaward'
@@ -4362,7 +4362,7 @@ final class api {
             $prwhere .= "n.status = 'pending'
                          AND EXISTS (
                              SELECT 1 FROM {spotaward_nomination_items} ni
-                              WHERE ni.nominationid = n.id AND ni.status <> 'pending'
+                              WHERE ni.nominationid = n.id AND ni.status IN ('ssteamprogress', 'rejected', 'closed')
                          )";
             $prsql = "SELECT COUNT(1) AS cnt FROM {spotaward_nominations} n {$prwhere}";
             $prcount = (int)$DB->count_records_sql($prsql, $prparams);
@@ -4429,7 +4429,7 @@ final class api {
                        (SELECT COUNT(1) FROM {spotaward_nomination_items} ni
                          WHERE ni.nominationid = n.id) AS totalitems,
                        (SELECT COUNT(1) FROM {spotaward_nomination_items} ni
-                         WHERE ni.nominationid = n.id AND ni.status <> 'pending') AS revieweditems,
+                         WHERE ni.nominationid = n.id AND ni.status IN ('ssteamprogress', 'rejected', 'closed')) AS revieweditems,
                        (SELECT COUNT(1) FROM {files} f
                          WHERE f.contextid = :syscontextid
                            AND f.component = 'local_spotaward'
@@ -4486,6 +4486,7 @@ final class api {
         foreach ($items as $item) {
             switch ($item->status) {
                 case 'pending':
+                case 'underreview':
                     $haspending = true;
                     break;
                 case 'ssteamprogress':

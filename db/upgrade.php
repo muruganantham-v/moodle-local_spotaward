@@ -356,5 +356,13 @@ function xmldb_local_spotaward_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026052702, 'local', 'spotaward');
     }
 
+    if ($oldversion < 2026052703) {
+        // Reset any item-level 'underreview' rows to 'pending' so PM can re-review them.
+        // 'underreview' was a legacy item status from an older workflow; the current
+        // code never sets items to 'underreview', so any remaining rows are stale.
+        $DB->set_field('spotaward_nomination_items', 'status', 'pending', ['status' => 'underreview']);
+        upgrade_plugin_savepoint(true, 2026052703, 'local', 'spotaward');
+    }
+
     return true;
 }
