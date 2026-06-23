@@ -280,6 +280,7 @@ final class api {
             return $cache[$userid] = $options;
         }
 
+        $nominatorroleid = constants::nominator_roleid();
         $sql = "SELECT DISTINCT c.id, c.shortname, c.fullname
                   FROM {course} c
                   JOIN {context} ctx
@@ -291,13 +292,18 @@ final class api {
                   JOIN {role} r
                     ON r.id = ra.roleid
                  WHERE c.id <> :sitecourse
-                   AND r.shortname IN ('teacher', 'editingteacher')
+                   AND (
+                        r.shortname IN ('teacher', 'editingteacher')
+                        OR (:nominatorroleid > 0 AND ra.roleid = :nominatorroleid2)
+                   )
               ORDER BY c.fullname ASC";
 
         $records = $DB->get_records_sql($sql, [
             'courselevel' => CONTEXT_COURSE,
             'userid' => $userid,
             'sitecourse' => SITEID,
+            'nominatorroleid' => $nominatorroleid,
+            'nominatorroleid2' => $nominatorroleid,
         ]);
 
         $options = [];
