@@ -11,6 +11,7 @@ use moodle_url;
 use stdClass;
 
 require_once(__DIR__ . '/cert_field_map.php');
+require_once(__DIR__ . '/pr_field_map.php');
 
 defined('MOODLE_INTERNAL') || die();
 
@@ -20,6 +21,11 @@ defined('MOODLE_INTERNAL') || die();
  * @package   local_spotaward
  */
 final class api {
+    /**
+     * Maximum allowed admin-share PDF attachment size.
+     */
+    private const ADMIN_SHARE_MAX_BYTES = 10485760;
+
     /**
      * Session key for draft entries.
      */
@@ -963,10 +969,10 @@ final class api {
 
         try {
             if ($attachcertificates) {
-                $certificatezip = self::build_certificate_zip_attachment($nominationid);
-                $temporaryfiles[] = $certificatezip['path'];
+                $certificatepdf = self::build_combined_certificate_pdf_attachment($nominationid);
+                $temporaryfiles[] = $certificatepdf['path'];
 
-                $attachment = self::build_admin_documents_bundle($nominationid, $filepath, $filename, $certificatezip);
+                $attachment = self::build_admin_documents_bundle($nominationid, $filepath, $filename, $certificatepdf);
                 $temporaryfiles[] = $attachment['path'];
             }
 
@@ -1018,7 +1024,13 @@ final class api {
             $recipients[] = $programmanager;
         }
 
-        $recipients = array_merge($recipients, self::get_ss_team_users(), self::get_configured_users('admin_team_members'));
+        if (!empty($nomination->maacexecutiveid)) {
+            $maacexecutive = core_user::get_user((int)$nomination->maacexecutiveid);
+            if ($maacexecutive && !empty($maacexecutive->email)) {
+                $recipients[] = $maacexecutive;
+            }
+        }
+
         if (empty($recipients)) {
             return;
         }
@@ -2670,6 +2682,92 @@ final class api {
      */
     public static function generate_certificate_using_bc(stdClass $model, stdClass $user, stdClass $course, 
                                                           stdClass $nomination, stdClass $item): string {
+        $nominator = core_user::get_user($nomination->nominatorid);
+        $programmanager = core_user::get_user($nomination->programmanagerid);
+        $replacements = cert_field_map::get_replacement_fields($course, $user, $nomination, $item, $nominator, $programmanager);
+
+        return self::generate_document_using_bc(
+            $model,
+            $replacements,
+            'Spot Award Certificate',
+            'Spot Award Certificate'
+        );
+    }
+
+    /**
+     * Build PR document filename and PDF content for download.
+     *
+     * @param int $nominationid
+     * @return array
+     */
+    public static function build_pr_document_download(int $nominationid): array {
+        $nomination = self::get_nomination($nominationid);
+        if ($nomination->status !== 'ssteamprogress') {
+            throw new moodle_exception('prdocumentnotavailable', 'local_spotaward');
+        }
+
+        $content = self::generate_pr_document_pdf($nominationid);
+        $course = get_course($nomination->courseid);
+        $base = clean_filename(format_string($course->fullname));
+        if ($base === '') {
+            $base = 'spot_award_pr';
+        }
+        $filename = 'Purchase_Request_' . $base . '_' . $nominationid . '.pdf';
+
+        return [$filename, $content];
+    }
+
+    /**
+     * Generate PR document PDF using configured Beautiful Certificate template.
+     *
+     * @param int $nominationid
+     * @return string
+     */
+    public static function generate_pr_document_pdf(int $nominationid): string {
+        $nomination = self::get_nomination($nominationid);
+        if ($nomination->status !== 'ssteamprogress') {
+            throw new moodle_exception('prdocumentnotavailable', 'local_spotaward');
+        }
+
+        $templateid = (int)get_config('local_spotaward', 'pr_templateid');
+        $model = self::get_beautiful_certificate_model($templateid);
+        $course = get_course($nomination->courseid);
+        $nominator = core_user::get_user($nomination->nominatorid);
+        $programmanager = core_user::get_user($nomination->programmanagerid);
+        $maacexecutive = !empty($nomination->maacexecutiveid)
+            ? core_user::get_user((int)$nomination->maacexecutiveid)
+            : null;
+        $items = self::get_nomination_items($nominationid);
+        [$awardsummary] = self::get_nomination_award_summary($nominationid);
+        $replacements = pr_field_map::get_replacement_fields(
+            $course,
+            $nomination,
+            $nominator ?: null,
+            $programmanager ?: null,
+            $maacexecutive ?: null,
+            $items,
+            $awardsummary
+        );
+
+        return self::generate_document_using_bc(
+            $model,
+            $replacements,
+            'Spot Award PR Document',
+            'Purchase Request'
+        );
+    }
+
+    /**
+     * Render a Beautiful Certificate template with custom replacements.
+     *
+     * @param stdClass $model
+     * @param array $replacements
+     * @param string $creator
+     * @param string $title
+     * @return string
+     */
+    private static function generate_document_using_bc(stdClass $model, array $replacements, string $creator,
+            string $title): string {
         global $CFG;
 
         require_once(__DIR__ . '/../../../../mod/certificatebeautiful/classes/pdf/vendor/autoload.php');
@@ -2678,15 +2776,12 @@ final class api {
         $proporcao = .85;
         $orientation = isset($model->orientation) ? $model->orientation : 'L';
 
-        $nominator = core_user::get_user($nomination->nominatorid);
-        $programmanager = core_user::get_user($nomination->programmanagerid);
-
         $mpdf = new \Mpdf\Mpdf(self::get_certificate_mpdf_config([210 * $proporcao, 297 * $proporcao], $orientation));
         $mpdf->autoPageBreak = false;
 
-        $mpdf->SetAuthor($course->fullname);
-        $mpdf->SetCreator('Spot Award Certificate');
-        $mpdf->SetTitle('Spot Award Certificate');
+        $mpdf->SetAuthor($title);
+        $mpdf->SetCreator($creator);
+        $mpdf->SetTitle($title);
 
         foreach ($model->pages_info_object as $page) {
             $mpdf->AddPageByArray([]);
@@ -2701,9 +2796,6 @@ final class api {
             // Match Beautiful Certificate's own PDF renderer behavior.
             $htmldata = str_replace("<section", "<body", $htmldata);
             $htmldata = str_replace("</section>", "</body>", $htmldata);
-
-            // Get all Spot Award replacement fields (generates all placeholder variations)
-            $replacements = cert_field_map::get_replacement_fields($course, $user, $nomination, $item, $nominator, $programmanager);
 
             // Add Beautiful Certificate system fields - use UPPERCASE (case sensitive!)
             $replacements['{$CERTIFICATE->description}'] = $model->description ?? '';
@@ -3129,7 +3221,55 @@ final class api {
     }
 
     /**
+     * Build all certificates as one merged PDF in temp storage.
+     *
+     * @param int $nominationid
+     * @return array
+     */
+    private static function build_combined_certificate_pdf_attachment(int $nominationid): array {
+        global $CFG;
+
+        self::ensure_nomination_certificates_generated($nominationid);
+        $basename = self::get_certificate_zip_basename($nominationid);
+        $files = self::get_all_certificate_files($nominationid);
+
+        if (empty($files)) {
+            throw new moodle_exception('nocertificates', 'local_spotaward');
+        }
+
+        $pdfcontents = [];
+        foreach ($files as $file) {
+            $pdfcontents[] = $file->get_content();
+        }
+
+        $mergedpdf = self::merge_pdf_documents($pdfcontents, $basename . '_certificates.pdf');
+        if ($mergedpdf === '') {
+            throw new moodle_exception('nocertificates', 'local_spotaward');
+        }
+
+        if (strlen($mergedpdf) > self::ADMIN_SHARE_MAX_BYTES) {
+            throw new moodle_exception('adminsharecertificatetoolarge', 'local_spotaward');
+        }
+
+        check_dir_exists($CFG->tempdir . '/spotaward_share_admin');
+        $tmppdf = tempnam($CFG->tempdir . '/spotaward_share_admin', 'spotawardcertpdf');
+        if ($tmppdf === false) {
+            throw new moodle_exception('generalexceptionmessage', 'error', '', 'Unable to create certificate PDF.');
+        }
+        file_put_contents($tmppdf, $mergedpdf);
+
+        return [
+            'path' => $tmppdf,
+            'name' => $basename . '_certificates.pdf',
+            'content' => $mergedpdf,
+        ];
+    }
+
+    /**
      * Build all certificates as a ZIP file in temp storage.
+     *
+     * Kept for manual "Download All Certificates" so user-facing downloads
+     * behave the same as before, even though admin sharing now uses one PDF.
      *
      * @param int $nominationid
      * @return array
@@ -3140,7 +3280,7 @@ final class api {
         self::ensure_nomination_certificates_generated($nominationid);
         $zipbasename = self::get_certificate_zip_basename($nominationid);
         $files = self::get_all_certificate_files($nominationid);
-        
+
         if (empty($files)) {
             throw new moodle_exception('nocertificates', 'local_spotaward');
         }
@@ -3179,21 +3319,25 @@ final class api {
     }
 
     /**
-     * Build admin attachment bundle containing the uploaded PR and certificates ZIP.
+     * Build admin attachment ZIP containing the uploaded PR and combined certificates PDF.
      *
      * @param int $nominationid
      * @param string $prpath
      * @param string $prfilename
-     * @param array $certificatezip
+     * @param array $certificatepdf
      * @return array
      */
     private static function build_admin_documents_bundle(int $nominationid, string $prpath, string $prfilename,
-            array $certificatezip): array {
+            array $certificatepdf): array {
         global $CFG;
 
         $prcontent = file_get_contents($prpath);
         if ($prcontent === false) {
             throw new moodle_exception('invalidparameter');
+        }
+
+        if (strlen($prcontent) > self::ADMIN_SHARE_MAX_BYTES) {
+            throw new moodle_exception('adminshareattachmenttoolarge', 'local_spotaward');
         }
 
         require_once(__DIR__ . '/../../../../lib/filestorage/zip_packer.php');
@@ -3207,7 +3351,7 @@ final class api {
         $zipper = new \zip_packer();
         $zipfiles = [
             'pr_document/' . clean_filename($prfilename) => [$prcontent],
-            'certificates/' . clean_filename($certificatezip['name']) => [$certificatezip['content']],
+            'certificates/' . clean_filename($certificatepdf['name']) => [$certificatepdf['content']],
         ];
 
         $result = $zipper->archive_to_pathname($zipfiles, $tmpzip);

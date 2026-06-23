@@ -3,6 +3,8 @@
 
 defined('MOODLE_INTERNAL') || die();
 
+require_once(__DIR__ . '/classes/local/pr_field_map.php');
+
 if (!function_exists('local_spotaward_settings_role_options')) {
     /**
      * Build selectable role options keyed by shortname.
@@ -171,6 +173,14 @@ $settings->add(new admin_setting_configselect(
         $options
     ));
 
+    $settings->add(new admin_setting_configselect(
+        'local_spotaward/pr_templateid',
+        get_string('pr_template', 'local_spotaward'),
+        get_string('pr_template_desc', 'local_spotaward'),
+        0,
+        $options
+    ));
+
     $settings->add(new admin_setting_description(
         'local_spotaward/manage_template',
         get_string('managetemplate', 'local_spotaward'),
@@ -182,6 +192,25 @@ $settings->add(new admin_setting_configselect(
     ));
 
     $fields = \local_spotaward\local\cert_field_map::table_structure();
+    foreach (\local_spotaward\local\pr_field_map::table_structure() as $prfield) {
+        $fieldkey = (string)($prfield['key'] ?? '');
+        if ($fieldkey === '') {
+            continue;
+        }
+
+        $alreadyexists = false;
+        foreach ($fields as $field) {
+            if (($field['key'] ?? '') === $fieldkey) {
+                $alreadyexists = true;
+                break;
+            }
+        }
+
+        if (!$alreadyexists) {
+            $fields[] = $prfield;
+        }
+    }
+
     $fieldshtml = '<p>' . get_string('field_mapping_help', 'local_spotaward') . '</p>';
     $fieldshtml .= '<table class="table table-striped table-sm w-auto">';
     $fieldshtml .= '<thead><tr><th>' . get_string('field_label', 'local_spotaward') . '</th><th>' . get_string('placeholder', 'local_spotaward') . '</th></tr></thead>';
@@ -199,4 +228,5 @@ $settings->add(new admin_setting_configselect(
         get_string('available_fields', 'local_spotaward'),
         $fieldshtml
     ));
+
 }

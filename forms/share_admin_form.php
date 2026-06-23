@@ -29,7 +29,7 @@ final class share_admin_form extends moodleform {
 
         $mform->addElement('filepicker', 'prdocument', get_string('uploadprdocument', 'local_spotaward'), null, [
             'maxbytes' => 0,
-            'accepted_types' => ['.pdf', '.doc', '.docx'],
+            'accepted_types' => ['.pdf'],
         ]);
         $mform->addRule('prdocument', null, 'required', null, 'server');
 

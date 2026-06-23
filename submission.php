@@ -314,6 +314,14 @@ echo html_writer::end_div();
 
 $actionbuttons = [];
 if (in_array($nomination->status, ['ssteamprogress', 'closed'], true)) {
+    if ($isssteam && $nomination->status === 'ssteamprogress') {
+        $actionbuttons[] = html_writer::link(
+            new moodle_url('/local/spotaward/download_pr.php', ['nominationid' => $id, 'sesskey' => sesskey()]),
+            get_string('downloadpr', 'local_spotaward'),
+            ['class' => 'btn btn-info']
+        );
+    }
+
     if ($isssteam && $certificateexist) {
         $actionbuttons[] = html_writer::link(
             new moodle_url('/local/spotaward/view_certificate.php', ['nominationid' => $id, 'userid' => 0, 'sesskey' => sesskey()]),
