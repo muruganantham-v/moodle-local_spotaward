@@ -639,13 +639,21 @@ final class api {
         $now = time();
 
         $firstEntry = reset($entries);
+        $parentcategories = [];
+        foreach ($entries as $entry) {
+            $category = trim((string)($entry['awardcategory'] ?? ''));
+            if ($category !== '') {
+                $parentcategories[$category] = $category;
+            }
+        }
+
         $nomination = (object)[
             'nominatorid' => $userid,
             'programmanagerid' => (int)$firstEntry['programmanagerid'],
             'maacexecutiveid' => (int)($firstEntry['maacexecutiveid'] ?? 0),
             'courseid' => (int)$firstEntry['courseid'],
             'modulename' => $firstEntry['modulename'],
-            'awardcategory' => $firstEntry['awardcategory'],
+            'awardcategory' => implode(', ', array_values($parentcategories)),
             'professional' => $firstEntry['professional'] ?? '',
             'awarddescription' => $firstEntry['awarddescription'],
             'studentcount' => 0,
