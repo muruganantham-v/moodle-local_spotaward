@@ -144,10 +144,12 @@ final class email_templates_form extends moodleform {
                 continue;
             }
             $fields[] = [
+                'group' => $field['group'],
                 'subject' => 'cliq_' . $field['subject'],
                 'body' => 'cliq_' . $field['body'],
                 'subject_default' => 'cliq_' . $field['subject_default'],
                 'body_default' => 'cliq_' . $field['body_default'],
+                'placeholders' => $field['placeholders'],
             ];
         }
 
@@ -204,7 +206,7 @@ final class email_templates_form extends moodleform {
                     get_string($subject . '_desc', 'local_spotaward'));
             }
 
-            $mform->addElement('html', self::build_placeholder_reference_html($field['placeholders']));
+            $mform->addElement('html', self::build_placeholder_reference_html($field['placeholders'] ?? []));
 
             $mform->addElement('text', $subject, get_string($subject, 'local_spotaward'), ['size' => 80]);
             $mform->setType($subject, PARAM_TEXT);
