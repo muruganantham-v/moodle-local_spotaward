@@ -110,6 +110,8 @@ if (!api::user_can_access($USER->id)) {
 
 $view = optional_param('view', '', PARAM_ALPHANUMEXT);
 $section = optional_param('section', 'form', PARAM_ALPHA);
+$page = max(0, optional_param('page', 0, PARAM_INT));
+$dashboardperpage = api::get_dashboard_page_size();
 
 $isnominator = api::is_nominator($USER->id);
 $ispm = api::is_program_manager($USER->id);
@@ -470,7 +472,8 @@ if ($view === 'programmanager' && $ispm) {
     ];
 
     $rows = [];
-    foreach (api::get_program_manager_submissions($USER->id, $section) as $submission) {
+    $dashboard = api::get_program_manager_submissions($USER->id, $section, $page, $dashboardperpage);
+    foreach ($dashboard['records'] as $submission) {
         $mentorname = fullname((object)['firstname' => $submission->firstname, 'lastname' => $submission->lastname]);
         $maacname = fullname((object)['firstname' => $submission->maacfirstname, 'lastname' => $submission->maaclastname]);
         $coursetitle = format_string($submission->coursename);
@@ -519,6 +522,12 @@ if ($view === 'programmanager' && $ispm) {
         'label' => get_string('programmanagerdashboard', 'local_spotaward'),
         'nosearch' => true,
     ]);
+    echo local_spotaward_render_dashboard_pagination(
+        (int)$dashboard['total'],
+        (int)$dashboard['page'],
+        (int)$dashboard['perpage'],
+        new moodle_url('/local/spotaward/index.php', ['view' => 'programmanager', 'section' => $section])
+    );
     echo html_writer::end_div();
     echo html_writer::end_div();
     echo html_writer::end_div();
@@ -529,7 +538,7 @@ if ($view === 'ssteam' && $isssteam) {
         $section = 'active';
     }
 
-    $dashboard = api::get_ss_team_dashboard_data($section);
+    $dashboard = api::get_ss_team_dashboard_data($section, $page, $dashboardperpage);
 
     echo html_writer::start_div('spotaward-shell');
     echo html_writer::tag('h3', get_string('ssteamdashboard', 'local_spotaward'), ['class' => 'spotaward-section-title']);
@@ -608,6 +617,12 @@ if ($view === 'ssteam' && $isssteam) {
         'label' => get_string('ssteamdashboard', 'local_spotaward'),
         'nosearch' => true,
     ]);
+    echo local_spotaward_render_dashboard_pagination(
+        (int)$dashboard['total'],
+        (int)$dashboard['page'],
+        (int)$dashboard['perpage'],
+        new moodle_url('/local/spotaward/index.php', ['view' => 'ssteam', 'section' => $section])
+    );
     echo html_writer::end_div();
     echo html_writer::end_div();
     echo html_writer::end_div();
@@ -618,8 +633,9 @@ if ($view === 'admin' && $isadmin) {
         $section = 'active';
     }
 
-    $records = api::get_admin_dashboard_data($section);
-    $formurl = new moodle_url('/local/spotaward/index.php', ['view' => 'admin', 'section' => $section]);
+    $dashboard = api::get_admin_dashboard_data($section, $page, $dashboardperpage);
+    $records = $dashboard['records'];
+    $formurl = new moodle_url('/local/spotaward/index.php', ['view' => 'admin', 'section' => $section, 'page' => $page]);
     $formid = 'spotaward-admin-dashboard-form';
     $buttonid = 'spotaward-admin-download-button';
     $selectallid = 'spotaward-admin-select-all';
@@ -721,6 +737,12 @@ if ($view === 'admin' && $isadmin) {
             'label' => get_string('admindashboard', 'local_spotaward'),
             'nosearch' => true,
         ]);
+        echo local_spotaward_render_dashboard_pagination(
+            (int)$dashboard['total'],
+            (int)$dashboard['page'],
+            (int)$dashboard['perpage'],
+            new moodle_url('/local/spotaward/index.php', ['view' => 'admin', 'section' => $section])
+        );
         echo html_writer::end_tag('form');
     }
     echo html_writer::end_div();
@@ -748,7 +770,14 @@ if ($view === 'manager' && $ismanager) {
     $programmanagerid = optional_param('programmanagerid', 0, PARAM_INT);
     $maacexecutiveid = optional_param('maacexecutiveid', 0, PARAM_INT);
     [$mentoroptions, $pmoptions, $maacoptions] = api::get_filter_options();
-    $dashboard = api::get_manager_dashboard_data($mentorid, $programmanagerid, $maacexecutiveid);
+    $dashboard = api::get_manager_dashboard_data(
+        $mentorid,
+        $programmanagerid,
+        $maacexecutiveid,
+        '',
+        $page,
+        $dashboardperpage
+    );
 
     echo html_writer::start_div('spotaward-shell');
     echo html_writer::tag('h3', get_string('managerdashboard', 'local_spotaward'), ['class' => 'spotaward-section-title']);
@@ -831,6 +860,17 @@ if ($view === 'manager' && $ismanager) {
         'id' => 'spotaward-manager-dashboard',
         'label' => get_string('aggregatedreport', 'local_spotaward'),
     ]);
+    echo local_spotaward_render_dashboard_pagination(
+        (int)$dashboard['total'],
+        (int)$dashboard['page'],
+        (int)$dashboard['perpage'],
+        new moodle_url('/local/spotaward/index.php', [
+            'view' => 'manager',
+            'mentorid' => $mentorid,
+            'programmanagerid' => $programmanagerid,
+            'maacexecutiveid' => $maacexecutiveid,
+        ])
+    );
     echo html_writer::end_div();
     echo html_writer::end_div();
     echo html_writer::end_div();

@@ -1100,6 +1100,39 @@ function local_spotaward_render_data_table(array $columns, array $rows, array $o
 }
 
 /**
+ * Render dashboard pagination summary and pager controls.
+ *
+ * @param int $total
+ * @param int $page
+ * @param int $perpage
+ * @param moodle_url $baseurl
+ * @return string
+ */
+function local_spotaward_render_dashboard_pagination(int $total, int $page, int $perpage, moodle_url $baseurl): string {
+    global $OUTPUT;
+
+    if ($perpage <= 0 || $total <= 0) {
+        return '';
+    }
+
+    $page = max(0, $page);
+    $start = ($page * $perpage) + 1;
+    $end = min($total, ($page + 1) * $perpage);
+    $summary = get_string('paginationstatus', 'local_spotaward', (object)[
+        'start' => $start,
+        'end' => $end,
+        'total' => $total,
+    ]);
+
+    $parts = [html_writer::tag('p', $summary, ['class' => 'spotaward-pagination-summary'])];
+    if ($total > $perpage) {
+        $parts[] = $OUTPUT->paging_bar($total, $page, $perpage, $baseurl);
+    }
+
+    return html_writer::div(implode('', $parts), 'spotaward-dashboard-pagination mt-3');
+}
+
+/**
  * Extract a numeric value from a formatted report string.
  *
  * @param string $value

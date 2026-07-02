@@ -27,6 +27,11 @@ final class api {
     private const ADMIN_SHARE_MAX_BYTES = 10485760;
 
     /**
+     * Default number of dashboard records per page.
+     */
+    private const DASHBOARD_PER_PAGE = 25;
+
+    /**
      * Session key for draft entries.
      */
     private const DRAFTSESSIONKEY = 'local_spotaward_draft_entries';
@@ -6000,9 +6005,12 @@ final class api {
      * @param int $userid
      * @return array
      */
-    public static function get_program_manager_submissions(int $userid, string $statusfilter = ''): array {
+    public static function get_program_manager_submissions(int $userid, string $statusfilter = '',
+            int $page = 0, int $perpage = 0): array {
         global $DB;
 
+        $page = max(0, $page);
+        $perpage = $perpage > 0 ? $perpage : self::get_dashboard_page_size();
         $syscontextid = \context_system::instance()->id;
         $params = ['userid' => $userid, 'syscontextid' => $syscontextid];
         $where = "n.programmanagerid = :userid";
@@ -6030,7 +6038,34 @@ final class api {
                  WHERE {$where}
                ORDER BY n.timecreated DESC";
 
-        return array_values($DB->get_records_sql($sql, $params));
+        $total = (int)$DB->count_records_sql(
+            "SELECT COUNT(1)
+               FROM {spotaward_nominations} n
+              WHERE {$where}",
+            ['userid' => $userid]
+        );
+
+        if ($total > 0) {
+            $page = min($page, (int)floor(($total - 1) / $perpage));
+        } else {
+            $page = 0;
+        }
+
+        return [
+            'records' => array_values($DB->get_records_sql($sql, $params, $page * $perpage, $perpage)),
+            'total' => $total,
+            'page' => $page,
+            'perpage' => $perpage,
+        ];
+    }
+
+    /**
+     * Get the default dashboard page size.
+     *
+     * @return int
+     */
+    public static function get_dashboard_page_size(): int {
+        return self::DASHBOARD_PER_PAGE;
     }
 
     /**
@@ -6141,9 +6176,11 @@ final class api {
      * @return array
      */
     public static function get_manager_dashboard_data(int $mentorid = 0, int $programmanagerid = 0,
-            int $maacexecutiveid = 0, string $statusfilter = ''): array {
+            int $maacexecutiveid = 0, string $statusfilter = '', int $page = 0, int $perpage = 0): array {
         global $DB;
 
+        $page = max(0, $page);
+        $perpage = $perpage > 0 ? $perpage : self::get_dashboard_page_size();
         $params = [];
         $where = [];
         if ($mentorid) {
@@ -6201,9 +6238,25 @@ final class api {
                   {$combinedsql}
                ORDER BY n.timecreated DESC";
 
+        $countparams = $params;
+        unset($countparams['syscontextid']);
+        $countsql = "SELECT COUNT(1)
+                       FROM {spotaward_nominations} n
+                       {$combinedsql}";
+
+        $total = (int)$DB->count_records_sql($countsql, $countparams);
+        if ($total > 0) {
+            $page = min($page, (int)floor(($total - 1) / $perpage));
+        } else {
+            $page = 0;
+        }
+
         return [
             'counts' => $counts,
-            'records' => array_values($DB->get_records_sql($sql, $params)),
+            'records' => array_values($DB->get_records_sql($sql, $params, $page * $perpage, $perpage)),
+            'total' => $total,
+            'page' => $page,
+            'perpage' => $perpage,
         ];
     }
 
@@ -6212,13 +6265,14 @@ final class api {
      *
      * @return array
      */
-    public static function get_ss_team_dashboard_data(string $statusfilter = ''): array {
+    public static function get_ss_team_dashboard_data(string $statusfilter = '', int $page = 0,
+            int $perpage = 0): array {
         $filter = $statusfilter;
         if ($filter === 'active') {
             $filter = 'ssteamprogress';
         }
         global $USER;
-        return self::get_manager_dashboard_data(0, 0, (int)$USER->id, $filter);
+        return self::get_manager_dashboard_data(0, 0, (int)$USER->id, $filter, $page, $perpage);
     }
 
     /**
@@ -6227,9 +6281,12 @@ final class api {
      * @param string $statusfilter
      * @return array
      */
-    public static function get_admin_dashboard_data(string $statusfilter = 'active'): array {
+    public static function get_admin_dashboard_data(string $statusfilter = 'active', int $page = 0,
+            int $perpage = 0): array {
         global $DB;
 
+        $page = max(0, $page);
+        $perpage = $perpage > 0 ? $perpage : self::get_dashboard_page_size();
         $where = ['n.adminsharedtime > 0'];
         if ($statusfilter === 'closed') {
             $where[] = "n.status = 'closed'";
@@ -6246,7 +6303,23 @@ final class api {
                  WHERE " . implode(' AND ', $where) . "
               ORDER BY n.adminsharedtime DESC, n.id DESC";
 
-        return array_values($DB->get_records_sql($sql));
+        $countsql = "SELECT COUNT(1)
+                       FROM {spotaward_nominations} n
+                      WHERE " . implode(' AND ', $where);
+
+        $total = (int)$DB->count_records_sql($countsql);
+        if ($total > 0) {
+            $page = min($page, (int)floor(($total - 1) / $perpage));
+        } else {
+            $page = 0;
+        }
+
+        return [
+            'records' => array_values($DB->get_records_sql($sql, [], $page * $perpage, $perpage)),
+            'total' => $total,
+            'page' => $page,
+            'perpage' => $perpage,
+        ];
     }
 
     /**

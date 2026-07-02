@@ -327,6 +327,7 @@ $string['alloptions'] = 'All';
 $string['datefrom'] = 'From date';
 $string['dateto'] = 'To date';
 $string['matchingrecords'] = 'matching records';
+$string['paginationstatus'] = 'Showing {$a->start} to {$a->end} of {$a->total} records';
 $string['sortascending'] = 'Sort ascending';
 $string['sortdescending'] = 'Sort descending';
 $string['exportcsv'] = 'Export CSV';
