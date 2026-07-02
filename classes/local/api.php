@@ -1571,8 +1571,8 @@ final class api {
      * @return string Cleaned file name
      */
     public static function validate_admin_pr_document_upload(string $filepath, string $filename): string {
-        $filename = clean_filename($filename);
-        if ($filename === '' || !preg_match('/\.pdf$/i', $filename)) {
+        $filename = self::normalize_admin_share_archive_filename($filename, 'invalidprpdf');
+        if (!preg_match('/\.pdf$/i', $filename)) {
             throw new moodle_exception('invalidprpdf', 'local_spotaward');
         }
 
@@ -1590,6 +1590,24 @@ final class api {
 
         if ($signature !== '%PDF-') {
             throw new moodle_exception('invalidprpdf', 'local_spotaward');
+        }
+
+        return $filename;
+    }
+
+    /**
+     * Normalize a filename before placing it into an admin-share archive.
+     *
+     * @param string $filename
+     * @param string $errorcode
+     * @return string
+     */
+    private static function normalize_admin_share_archive_filename(string $filename,
+            string $errorcode = 'invalidparameter'): string {
+        $filename = trim(clean_filename($filename));
+        if ($filename === '' || $filename === '.' || $filename === '..' ||
+                preg_match('/[\/\\\\]/', $filename)) {
+            throw new moodle_exception($errorcode, 'local_spotaward');
         }
 
         return $filename;
@@ -4754,9 +4772,11 @@ final class api {
         }
 
         $zipper = new \zip_packer();
+        $safeprfilename = self::normalize_admin_share_archive_filename($prfilename);
+        $safecertificatefilename = self::normalize_admin_share_archive_filename((string)$certificatepdf['name']);
         $zipfiles = [
-            'pr_document/' . clean_filename($prfilename) => $prpath,
-            'certificates/' . clean_filename($certificatepdf['name']) => $certificatepdf['path'],
+            'pr_document/' . $safeprfilename => $prpath,
+            'certificates/' . $safecertificatefilename => $certificatepdf['path'],
         ];
 
         $result = $zipper->archive_to_pathname($zipfiles, $tmpzip);
@@ -4809,11 +4829,13 @@ final class api {
         }
 
         try {
+            $safeprfilename = self::normalize_admin_share_archive_filename($prfilename);
             $zipfiles = [
-                'pr_document/' . clean_filename($prfilename) => $prpath,
+                'pr_document/' . $safeprfilename => $prpath,
             ];
             foreach ($compactcertificates as $certfilename => $certpath) {
-                $zipfiles['certificates/' . clean_filename($certfilename)] = $certpath;
+                $safezippedcertname = self::normalize_admin_share_archive_filename((string)$certfilename);
+                $zipfiles['certificates/' . $safezippedcertname] = $certpath;
             }
 
             $zipper = new \zip_packer();
