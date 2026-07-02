@@ -40,6 +40,44 @@ if ($action === 'studentreport') {
     die();
 }
 
+if ($action === 'autosavedraft') {
+    require_sesskey();
+
+    if (!api::user_can_access($USER->id)) {
+        http_response_code(403);
+        echo json_encode([
+            'saved' => false,
+            'message' => 'Access denied',
+        ]);
+        die();
+    }
+
+    try {
+        $data = (object)[
+            'courseid' => optional_param('courseid', 0, PARAM_INT),
+            'modulename' => optional_param('modulename', '', PARAM_TEXT),
+            'awardpayload' => optional_param('awardpayload', '', PARAM_RAW_TRIMMED),
+            'professional' => optional_param('professional', '', PARAM_TEXT),
+            'programmanagerid' => optional_param('programmanagerid', 0, PARAM_INT),
+            'maacexecutiveid' => optional_param('maacexecutiveid', 0, PARAM_INT),
+        ];
+
+        $state = api::save_draft_form_state($data, $USER->id);
+        echo json_encode([
+            'saved' => !empty($state),
+            'cleared' => empty($state),
+            'timesaved' => (int)($state['timesaved'] ?? 0),
+        ]);
+    } catch (Throwable $e) {
+        http_response_code(400);
+        echo json_encode([
+            'saved' => false,
+            'message' => $e->getMessage(),
+        ]);
+    }
+    die();
+}
+
 $courseid = required_param('courseid', PARAM_INT);
 
 if ($courseid <= 0) {

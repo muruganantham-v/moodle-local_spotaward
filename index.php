@@ -27,6 +27,40 @@ function local_spotaward_build_awardpayload_from_request(): string {
 }
 
 /**
+ * Build current nomination form state from request values.
+ *
+ * @return stdClass
+ */
+function local_spotaward_build_nomination_form_state_from_request(): stdClass {
+    return (object)[
+        'courseid' => optional_param('courseid', 0, PARAM_INT) ?: optional_param('coursepicker', 0, PARAM_INT),
+        'modulename' => optional_param('modulename', '', PARAM_TEXT),
+        'awardpayload' => local_spotaward_build_awardpayload_from_request(),
+        'professional' => optional_param('professional', '', PARAM_TEXT),
+        'programmanagerid' => optional_param('programmanagerid', 0, PARAM_INT),
+        'maacexecutiveid' => optional_param('maacexecutiveid', 0, PARAM_INT),
+    ];
+}
+
+/**
+ * Convert stored form state into the draft-context structure used by the form.
+ *
+ * @param array $state
+ * @return array
+ */
+function local_spotaward_build_draft_context_from_form_state(array $state): array {
+    return [
+        'courseid' => (int)($state['courseid'] ?? 0),
+        'modulename' => (string)($state['modulename'] ?? ''),
+        'professional' => (string)($state['professional'] ?? ''),
+        'programmanagerid' => (int)($state['programmanagerid'] ?? 0),
+        'maacexecutiveid' => (int)($state['maacexecutiveid'] ?? 0),
+        'awardallocations' => is_array($state['awardallocations'] ?? null) ? $state['awardallocations'] : [],
+        'timesaved' => (int)($state['timesaved'] ?? 0),
+    ];
+}
+
+/**
  * Validate nomination form data for preview/submit actions.
  *
  * @param stdClass $data
@@ -182,6 +216,8 @@ $mform = null;
 if ($isnominator) {
     $draftentries = api::get_draft_entries();
     $hasdraftentries = !empty($draftentries);
+    $draftformstate = api::get_draft_form_state();
+    $hasrecoverablestate = $hasdraftentries || !empty($draftformstate);
     $draftcontext = [];
     if ($hasdraftentries) {
         $firstdraftentry = reset($draftentries);
@@ -199,6 +235,10 @@ if ($isnominator) {
         ];
         $selectedcourseid = $draftcontext['courseid'];
     }
+    if (!empty($draftformstate)) {
+        $draftcontext = local_spotaward_build_draft_context_from_form_state($draftformstate);
+        $selectedcourseid = $draftcontext['courseid'];
+    }
 
     $isformpost = optional_param('submitnominations', '', PARAM_RAW) !== ''
         || optional_param('previewdraft', '', PARAM_RAW) !== ''
@@ -214,25 +254,21 @@ if ($isnominator) {
             'selectedprogrammanagerid' => $selectedprogrammanagerid,
             'selectedmaacexecutiveid' => $selectedmaacexecutiveid,
             'selectedcourseid' => $selectedcourseid,
-            'hasdraftentries' => $hasdraftentries,
+            'hasdraftentries' => $hasrecoverablestate,
             'draftcontext' => $draftcontext,
+            'draftsavedat' => (int)($draftcontext['timesaved'] ?? 0),
             'fielderrors' => $nominationfielderrors,
         ]);
 
         if (optional_param('submitnominations', '', PARAM_RAW) !== '') {
             require_sesskey();
-            $currentdata = (object)[
-                'courseid' => optional_param('courseid', 0, PARAM_INT) ?: optional_param('coursepicker', 0, PARAM_INT),
-                'modulename' => optional_param('modulename', '', PARAM_TEXT),
-                'awardpayload' => local_spotaward_build_awardpayload_from_request(),
-                'professional' => optional_param('professional', '', PARAM_TEXT),
-                'programmanagerid' => optional_param('programmanagerid', 0, PARAM_INT),
-                'maacexecutiveid' => optional_param('maacexecutiveid', 0, PARAM_INT),
-            ];
+            $currentdata = local_spotaward_build_nomination_form_state_from_request();
+            $draftformstate = api::save_draft_form_state($currentdata, $USER->id);
             $nominationfielderrors = local_spotaward_validate_nomination_request($currentdata);
             if (empty($nominationfielderrors)) {
                 api::replace_draft_entries($currentdata, $USER->id);
                 api::submit_draft_entries($USER->id);
+                api::clear_draft_form_state();
                 local_spotaward_success_redirect(
                     new moodle_url('/local/spotaward/index.php', ['view' => 'nominator']),
                     get_string('submissioncreated', 'local_spotaward')
@@ -245,6 +281,7 @@ if ($isnominator) {
         if (optional_param('cleardraft', '', PARAM_RAW) !== '') {
             require_sesskey();
             api::clear_draft_entries();
+            api::clear_draft_form_state();
             local_spotaward_success_redirect(
                 new moodle_url('/local/spotaward/index.php', ['view' => 'nominator']),
                 get_string('draftentriescleared', 'local_spotaward')
@@ -253,17 +290,12 @@ if ($isnominator) {
 
         if (optional_param('previewdraft', '', PARAM_RAW) !== '') {
             require_sesskey();
-            $previewdata = (object)[
-                'courseid' => optional_param('courseid', 0, PARAM_INT) ?: optional_param('coursepicker', 0, PARAM_INT),
-                'modulename' => optional_param('modulename', '', PARAM_TEXT),
-                'awardpayload' => local_spotaward_build_awardpayload_from_request(),
-                'professional' => optional_param('professional', '', PARAM_TEXT),
-                'programmanagerid' => optional_param('programmanagerid', 0, PARAM_INT),
-                'maacexecutiveid' => optional_param('maacexecutiveid', 0, PARAM_INT),
-            ];
+            $previewdata = local_spotaward_build_nomination_form_state_from_request();
+            $draftformstate = api::save_draft_form_state($previewdata, $USER->id);
             $nominationfielderrors = local_spotaward_validate_nomination_request($previewdata);
             if (empty($nominationfielderrors)) {
                 api::replace_draft_entries($previewdata, $USER->id);
+                api::clear_draft_form_state();
                 local_spotaward_success_redirect(
                     new moodle_url('/local/spotaward/index.php', ['view' => 'nominator']),
                     get_string('draftpreviewupdated', 'local_spotaward')
@@ -276,13 +308,18 @@ if ($isnominator) {
         }
 
         if (!empty($nominationfielderrors)) {
+            if (!empty($draftformstate)) {
+                $draftcontext = local_spotaward_build_draft_context_from_form_state($draftformstate);
+                $selectedcourseid = (int)($draftcontext['courseid'] ?? $selectedcourseid);
+            }
             $mform = new nomination_form(null, [
                 'courseoptions' => $allcourseoptions,
                 'selectedprogrammanagerid' => $selectedprogrammanagerid,
                 'selectedmaacexecutiveid' => $selectedmaacexecutiveid,
                 'selectedcourseid' => $selectedcourseid,
-                'hasdraftentries' => $hasdraftentries,
+                'hasdraftentries' => !empty($draftcontext),
                 'draftcontext' => $draftcontext,
+                'draftsavedat' => (int)($draftcontext['timesaved'] ?? 0),
                 'fielderrors' => $nominationfielderrors,
             ]);
             if (!empty($previewdata ?? null)) {
@@ -347,7 +384,21 @@ if ($view === 'nominator' && $isnominator) {
 
     if ($section === 'form') {
         $PAGE->requires->js_init_code(local_spotaward_nomination_form_js(new moodle_url('/local/spotaward/ajax.php')));
-        $PAGE->requires->js_call_amd('local_spotaward/nomination', 'init');
+        $PAGE->requires->js_call_amd('local_spotaward/nomination', 'init', [[
+            'autosaveurl' => (new moodle_url('/local/spotaward/ajax.php', ['action' => 'autosavedraft']))->out(false),
+            'sesskey' => sesskey(),
+            'autosaveintervalms' => 60000,
+            'autosavedebouncems' => 8000,
+            'hasrecoverablestate' => !empty($draftcontext),
+            'initialsavedat' => (int)($draftcontext['timesaved'] ?? 0),
+            'strings' => [
+                'saving' => get_string('draftautosaving', 'local_spotaward'),
+                'savedprefix' => get_string('draftautosavedprefix', 'local_spotaward'),
+                'unsaved' => get_string('draftchangespending', 'local_spotaward'),
+                'failed' => get_string('draftsavefailed', 'local_spotaward'),
+                'leavewarning' => get_string('draftleavewarning', 'local_spotaward'),
+            ],
+        ]]);
     }
 
     if ($section === 'form') {

@@ -31,6 +31,11 @@ final class api {
      */
     private const DRAFTSESSIONKEY = 'local_spotaward_draft_entries';
 
+    /**
+     * Session key for partial nomination form autosave state.
+     */
+    private const DRAFTFORMSTATESESSIONKEY = 'local_spotaward_draft_form_state';
+
     /** @var array Request-level cache for get_nomination(). */
     private static $nominationcache = [];
 
@@ -815,6 +820,152 @@ final class api {
     public static function clear_draft_entries(): void {
         global $SESSION;
         $SESSION->{self::DRAFTSESSIONKEY} = [];
+    }
+
+    /**
+     * Get partial nomination form autosave state from session.
+     *
+     * @return array
+     */
+    public static function get_draft_form_state(): array {
+        global $SESSION;
+
+        if (empty($SESSION->{self::DRAFTFORMSTATESESSIONKEY}) || !is_array($SESSION->{self::DRAFTFORMSTATESESSIONKEY})) {
+            $SESSION->{self::DRAFTFORMSTATESESSIONKEY} = [];
+        }
+
+        return $SESSION->{self::DRAFTFORMSTATESESSIONKEY};
+    }
+
+    /**
+     * Clear partial nomination form autosave state.
+     *
+     * @return void
+     */
+    public static function clear_draft_form_state(): void {
+        global $SESSION;
+        $SESSION->{self::DRAFTFORMSTATESESSIONKEY} = [];
+    }
+
+    /**
+     * Save partial nomination form autosave state.
+     *
+     * This is intentionally more forgiving than replace_draft_entries() so users
+     * can recover in-progress work before the form becomes fully valid.
+     *
+     * @param stdClass $data
+     * @param int $userid
+     * @return array
+     */
+    public static function save_draft_form_state(stdClass $data, int $userid): array {
+        global $SESSION;
+
+        $courseid = max(0, (int)($data->courseid ?? 0));
+        $modulename = clean_param((string)($data->modulename ?? ''), PARAM_TEXT);
+        $professional = clean_param((string)($data->professional ?? ''), PARAM_TEXT);
+        $programmanagerid = max(0, (int)($data->programmanagerid ?? 0));
+        $maacexecutiveid = max(0, (int)($data->maacexecutiveid ?? 0));
+        $awardallocations = json_decode((string)($data->awardpayload ?? ''), true);
+        if (!is_array($awardallocations)) {
+            $awardallocations = [];
+        }
+
+        $filteredallocations = [];
+        foreach ($awardallocations as $awardcategory => $studentids) {
+            $awardcategory = clean_param((string)$awardcategory, PARAM_TEXT);
+            if ($awardcategory === '') {
+                continue;
+            }
+            $studentids = array_values(array_unique(array_filter(array_map('intval', (array)$studentids))));
+            if (!empty($studentids)) {
+                $filteredallocations[$awardcategory] = $studentids;
+            }
+        }
+        $awardallocations = $filteredallocations;
+
+        if ($courseid > 0 && self::can_nominate_in_course($userid, $courseid)) {
+            $course = get_course($courseid);
+            if ($modulename === '') {
+                $modulename = constants::module_for_course((string)$course->shortname, (string)$course->fullname);
+            }
+            $professional = self::normalize_professional_for_course($courseid, $professional);
+
+            $allowedcategories = constants::award_categories_for_course((string)$course->shortname, (string)$course->fullname);
+            $allowedcategorykeys = array_keys($allowedcategories);
+            $validstudents = [];
+            foreach (self::get_course_students($courseid, $userid) as $student) {
+                $validstudents[(int)$student->id] = true;
+            }
+
+            $filteredallocations = [];
+            foreach ($awardallocations as $awardcategory => $studentids) {
+                if (!in_array($awardcategory, $allowedcategorykeys, true)) {
+                    continue;
+                }
+                $studentids = array_values(array_filter($studentids, static function(int $studentid) use ($validstudents): bool {
+                    return !empty($validstudents[$studentid]);
+                }));
+                if (!empty($studentids)) {
+                    $filteredallocations[$awardcategory] = $studentids;
+                }
+            }
+            $awardallocations = $filteredallocations;
+
+            $validprogrammanagers = [];
+            foreach (self::get_program_managers_for_course($courseid) as $user) {
+                $validprogrammanagers[(int)$user->id] = true;
+            }
+            if ($programmanagerid > 0 && empty($validprogrammanagers[$programmanagerid])) {
+                $programmanagerid = 0;
+            }
+
+            $validmaacexecutives = [];
+            foreach (self::get_maac_executives_for_course($courseid) as $user) {
+                $validmaacexecutives[(int)$user->id] = true;
+            }
+            if ($maacexecutiveid > 0 && empty($validmaacexecutives[$maacexecutiveid])) {
+                $maacexecutiveid = 0;
+            }
+        } else if ($courseid > 0) {
+            $courseid = 0;
+            $modulename = '';
+            $programmanagerid = 0;
+            $maacexecutiveid = 0;
+            $awardallocations = [];
+        }
+
+        $state = [
+            'courseid' => $courseid,
+            'modulename' => $modulename,
+            'professional' => $professional,
+            'programmanagerid' => $programmanagerid,
+            'maacexecutiveid' => $maacexecutiveid,
+            'awardallocations' => $awardallocations,
+            'timesaved' => time(),
+        ];
+
+        if (!self::draft_form_state_has_content($state)) {
+            self::clear_draft_form_state();
+            return [];
+        }
+
+        $SESSION->{self::DRAFTFORMSTATESESSIONKEY} = $state;
+        return $state;
+    }
+
+    /**
+     * Whether a partial draft form state contains recoverable data.
+     *
+     * @param array $state
+     * @return bool
+     */
+    private static function draft_form_state_has_content(array $state): bool {
+        return !empty($state['courseid']) ||
+            !empty($state['modulename']) ||
+            !empty($state['professional']) ||
+            !empty($state['programmanagerid']) ||
+            !empty($state['maacexecutiveid']) ||
+            !empty($state['awardallocations']);
     }
 
     /**

@@ -28,6 +28,7 @@ final class nomination_form extends moodleform {
         $selectedcourseid = $this->_customdata['selectedcourseid'] ?? 0;
         $hasdraftentries = !empty($this->_customdata['hasdraftentries']);
         $draftcontext = $this->_customdata['draftcontext'] ?? [];
+        $draftsavedat = (int)($this->_customdata['draftsavedat'] ?? 0);
         $fielderrors = $this->_customdata['fielderrors'] ?? [];
 
         $mform->addElement('html', '<div class="spotaward-form-section"><div class="spotaward-form-section-header">Course Details</div><div class="spotaward-form-section-body">');
@@ -127,6 +128,7 @@ final class nomination_form extends moodleform {
             $formattrs['data-draft-programmanagerid'] = (string)($draftcontext['programmanagerid'] ?? 0);
             $formattrs['data-draft-maacexecutiveid'] = (string)($draftcontext['maacexecutiveid'] ?? 0);
         }
+        $formattrs['data-draft-saved-at'] = (string)$draftsavedat;
         $mform->updateAttributes($formattrs);
 
         $disableactions = !$hasdraftentries ? ' disabled="disabled"' : '';
@@ -143,6 +145,7 @@ final class nomination_form extends moodleform {
         $buttonrow .= '<input type="submit" class="btn btn-primary" name="submitnominations" id="id_submitnominations" value="' .
             s(get_string('submitnominations', 'local_spotaward')) . '"' . $disableactions . '>';
         $buttonrow .= '</span>';
+        $buttonrow .= '<span id="spotaward-draft-status" class="spotaward-draft-status" aria-live="polite"></span>';
         $buttonrow .= '</div>';
         $mform->addElement('html', $buttonrow);
     }

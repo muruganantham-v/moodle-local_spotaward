@@ -1127,6 +1127,32 @@
   flex: 0 0 auto;
 }
 
+.spotaward-draft-status {
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 0 2px;
+  color: var(--sa-text-muted);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.spotaward-draft-status.is-saving {
+  color: #9a6700;
+}
+
+.spotaward-draft-status.is-saved {
+  color: #0f766e;
+}
+
+.spotaward-draft-status.is-warning {
+  color: #b45309;
+}
+
+.spotaward-draft-status.is-error {
+  color: #b91c1c;
+}
+
 .spotaward-secondary-actions > span {
   display: inline-flex;
   flex: 0 0 auto;
