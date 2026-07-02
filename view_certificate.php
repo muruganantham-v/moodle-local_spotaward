@@ -75,16 +75,13 @@ if ($userid > 0) {
 } else {
     $filename = "Spot_Award_Certificates_{$nominationid}.pdf";
 
-    $pdfcontents = [];
-    foreach (local_spotaward\local\api::get_all_certificate_files($nominationid) as $file) {
-        $pdfcontents[] = $file->get_content();
-    }
+    $files = local_spotaward\local\api::get_all_certificate_files($nominationid);
 
-    if (empty($pdfcontents)) {
+    if (empty($files)) {
         throw new moodle_exception('nocertificates', 'local_spotaward');
     }
 
-    $content = local_spotaward\local\api::merge_pdf_documents($pdfcontents, $filename);
+    $content = local_spotaward\local\api::merge_stored_pdf_files($files, $filename);
 }
 
 if ($action === 'download') {

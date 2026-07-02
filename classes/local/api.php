@@ -3012,61 +3012,185 @@ final class api {
      * @return string
      */
     public static function merge_pdf_documents(array $pdfcontents, string $outputfilename = 'certificates.pdf'): string {
-        global $CFG;
+        $tempfiles = self::create_temp_pdf_files_from_contents($pdfcontents, 'spotaward_merge_pdf_sources');
+        if (empty($tempfiles)) {
+            return '';
+        }
 
-        $pdfcontents = array_values(array_filter($pdfcontents, function($content) {
-            return is_string($content) && $content !== '';
+        try {
+            return self::merge_pdf_files($tempfiles, $outputfilename);
+        } finally {
+            self::cleanup_temp_files($tempfiles);
+        }
+    }
+
+    /**
+     * Merge stored certificate files without keeping all PDF bodies in memory.
+     *
+     * @param array $files
+     * @param string $outputfilename
+     * @return string
+     */
+    public static function merge_stored_pdf_files(array $files, string $outputfilename = 'certificates.pdf'): string {
+        $tempfiles = self::create_temp_pdf_files_from_stored_files($files, 'spotaward_merge_pdf_sources');
+        if (empty($tempfiles)) {
+            return '';
+        }
+
+        try {
+            return self::merge_pdf_files($tempfiles, $outputfilename);
+        } finally {
+            self::cleanup_temp_files($tempfiles);
+        }
+    }
+
+    /**
+     * Merge PDF files from temp paths into a single PDF.
+     *
+     * @param array $pdfpaths
+     * @param string $outputfilename
+     * @return string
+     */
+    public static function merge_pdf_files(array $pdfpaths, string $outputfilename = 'certificates.pdf'): string {
+        $pdfpaths = array_values(array_filter($pdfpaths, static function($path) {
+            return is_string($path) && $path !== '' && is_file($path);
         }));
 
-        if (empty($pdfcontents)) {
+        if (empty($pdfpaths)) {
             return '';
         }
 
         require_once(__DIR__ . '/../../../../lib/tcpdf/tcpdf.php');
         require_once(__DIR__ . '/../../../../mod/certificatebeautiful/classes/pdf/vendor/autoload.php');
 
-        check_dir_exists($CFG->tempdir . '/spotaward_merge_pdf');
-        $tempdir = make_temp_directory('spotaward_merge_pdf');
-        $tempfiles = [];
+        $pdf = new \setasign\Fpdi\TcpdfFpdi('L', 'mm', 'A4', true, 'UTF-8', false);
+        $pdf->setPrintHeader(false);
+        $pdf->setPrintFooter(false);
+        $pdf->SetMargins(0, 0, 0);
+        $pdf->SetAutoPageBreak(false, 0);
+        $pdf->SetCompression(true);
 
-        try {
-            $pdf = new \setasign\Fpdi\TcpdfFpdi('L', 'mm', 'A4', true, 'UTF-8', false);
-            $pdf->setPrintHeader(false);
-            $pdf->setPrintFooter(false);
-            $pdf->SetMargins(0, 0, 0);
-            $pdf->SetAutoPageBreak(false, 0);
-            $pdf->SetCompression(true);
+        foreach ($pdfpaths as $pdfpath) {
+            $pagecount = $pdf->setSourceFile($pdfpath);
+            for ($page = 1; $page <= $pagecount; $page++) {
+                $templateid = $pdf->importPage($page);
+                $size = $pdf->getTemplateSize($templateid);
 
-            foreach ($pdfcontents as $index => $content) {
-                $temppath = $tempdir . '/cert_' . $index . '.pdf';
-                file_put_contents($temppath, $content);
-                $tempfiles[] = $temppath;
-
-                $pagecount = $pdf->setSourceFile($temppath);
-                for ($page = 1; $page <= $pagecount; $page++) {
-                    $templateid = $pdf->importPage($page);
-                    $size = $pdf->getTemplateSize($templateid);
-
-                    $orientation = ($size['width'] > $size['height']) ? 'L' : 'P';
-                    $pdf->AddPage($orientation, [$size['width'], $size['height']]);
-                    $pdf->useTemplate($templateid, 0, 0, $size['width'], $size['height'], true);
-                }
-            }
-
-            $merged = $pdf->Output($outputfilename, 'S');
-            $optimized = self::optimize_pdf_with_ghostscript($merged, $outputfilename);
-            if ($optimized !== '') {
-                $merged = $optimized;
-            }
-        } finally {
-            foreach ($tempfiles as $temppath) {
-                if (is_file($temppath)) {
-                    @unlink($temppath);
-                }
+                $orientation = ($size['width'] > $size['height']) ? 'L' : 'P';
+                $pdf->AddPage($orientation, [$size['width'], $size['height']]);
+                $pdf->useTemplate($templateid, 0, 0, $size['width'], $size['height'], true);
             }
         }
 
+        $merged = $pdf->Output($outputfilename, 'S');
+        $optimized = self::optimize_pdf_with_ghostscript($merged, $outputfilename);
+        if ($optimized !== '') {
+            $merged = $optimized;
+        }
+
         return $merged;
+    }
+
+    /**
+     * Create temp PDF files from binary PDF contents.
+     *
+     * @param array $pdfcontents
+     * @param string $tempdirectory
+     * @return array
+     */
+    private static function create_temp_pdf_files_from_contents(array $pdfcontents,
+            string $tempdirectory = 'spotaward_merge_pdf_sources'): array {
+        $pdfcontents = array_values(array_filter($pdfcontents, static function($content) {
+            return is_string($content) && $content !== '';
+        }));
+        if (empty($pdfcontents)) {
+            return [];
+        }
+
+        $tempdir = make_temp_directory($tempdirectory);
+        $tempfiles = [];
+        foreach ($pdfcontents as $index => $content) {
+            $temppath = self::write_pdf_temp_file((string)$content, $tempdir, 'spotawardpdf' . $index);
+            if ($temppath !== '') {
+                $tempfiles[] = $temppath;
+            }
+        }
+
+        return $tempfiles;
+    }
+
+    /**
+     * Create temp PDF files from stored files one at a time.
+     *
+     * @param array $files
+     * @param string $tempdirectory
+     * @return array
+     */
+    private static function create_temp_pdf_files_from_stored_files(array $files,
+            string $tempdirectory = 'spotaward_merge_pdf_sources'): array {
+        if (empty($files)) {
+            return [];
+        }
+
+        $tempdir = make_temp_directory($tempdirectory);
+        $tempfiles = [];
+        foreach ($files as $index => $file) {
+            if (!is_object($file) || !method_exists($file, 'get_content')) {
+                continue;
+            }
+
+            $content = $file->get_content();
+            if (!is_string($content) || $content === '') {
+                continue;
+            }
+
+            $temppath = self::write_pdf_temp_file($content, $tempdir, 'spotawardstored' . $index);
+            if ($temppath !== '') {
+                $tempfiles[] = $temppath;
+            }
+        }
+
+        return $tempfiles;
+    }
+
+    /**
+     * Write one PDF body to a temp file and return the path.
+     *
+     * @param string $content
+     * @param string $tempdir
+     * @param string $prefix
+     * @return string
+     */
+    private static function write_pdf_temp_file(string $content, string $tempdir, string $prefix): string {
+        $temppath = tempnam($tempdir, $prefix);
+        if ($temppath === false) {
+            return '';
+        }
+
+        $pdfpath = $temppath . '.pdf';
+        @rename($temppath, $pdfpath);
+        if (file_put_contents($pdfpath, $content) === false) {
+            if (is_file($pdfpath)) {
+                @unlink($pdfpath);
+            }
+            return '';
+        }
+
+        return $pdfpath;
+    }
+
+    /**
+     * Remove temp files created during PDF processing.
+     *
+     * @param array $paths
+     * @return void
+     */
+    private static function cleanup_temp_files(array $paths): void {
+        foreach ($paths as $path) {
+            if (is_string($path) && $path !== '' && is_file($path)) {
+                @unlink($path);
+            }
+        }
     }
 
     /**
@@ -3938,22 +4062,21 @@ final class api {
             throw new moodle_exception('nocertificates', 'local_spotaward');
         }
 
-        $pdfcontents = [];
-        foreach ($files as $file) {
-            $pdfcontents[] = $file->get_content();
-        }
-
-        $mergedpdf = self::merge_pdf_documents($pdfcontents, $basename . '_certificates.pdf');
+        $mergedpdf = self::merge_stored_pdf_files($files, $basename . '_certificates.pdf');
         if ($mergedpdf === '') {
             throw new moodle_exception('nocertificates', 'local_spotaward');
         }
 
         if (strlen($mergedpdf) > self::ADMIN_SHARE_MAX_BYTES) {
-            $compactpdfcontents = self::generate_nomination_certificate_pdf_contents($nominationid, 'adminshare');
-            if (!empty($compactpdfcontents)) {
-                $compactmergedpdf = self::merge_pdf_documents($compactpdfcontents, $basename . '_certificates.pdf');
-                if ($compactmergedpdf !== '' && strlen($compactmergedpdf) < strlen($mergedpdf)) {
-                    $mergedpdf = $compactmergedpdf;
+            $compactpdffiles = self::generate_nomination_certificate_pdf_temp_files($nominationid, 'adminshare');
+            if (!empty($compactpdffiles)) {
+                try {
+                    $compactmergedpdf = self::merge_pdf_files($compactpdffiles, $basename . '_certificates.pdf');
+                    if ($compactmergedpdf !== '' && strlen($compactmergedpdf) < strlen($mergedpdf)) {
+                        $mergedpdf = $compactmergedpdf;
+                    }
+                } finally {
+                    self::cleanup_temp_files($compactpdffiles);
                 }
             }
         }
@@ -3972,12 +4095,12 @@ final class api {
         return [
             'path' => $tmppdf,
             'name' => $basename . '_certificates.pdf',
-            'content' => $mergedpdf,
+            'size' => filesize($tmppdf) ?: strlen($mergedpdf),
         ];
     }
 
     /**
-     * Generate nomination certificate PDFs in-memory with a specific compression profile.
+     * Generate nomination certificate PDFs as temp files with a specific compression profile.
      *
      * This is used for admin-share fallbacks so we can keep emailed bundles below
      * the attachment threshold without replacing the normal stored certificates.
@@ -3986,7 +4109,7 @@ final class api {
      * @param string $compressionprofile
      * @return array
      */
-    private static function generate_nomination_certificate_pdf_contents(int $nominationid,
+    private static function generate_nomination_certificate_pdf_temp_files(int $nominationid,
             string $compressionprofile = 'default'): array {
         $nomination = self::get_nomination($nominationid);
         if (!in_array($nomination->status, ['ssteamprogress', 'closed'], true)) {
@@ -3997,6 +4120,7 @@ final class api {
         $model = self::get_beautiful_certificate_model($templateid);
         $course = get_course($nomination->courseid);
         $items = self::get_nomination_items($nominationid);
+        $tempdir = make_temp_directory('spotaward_compact_admin_certs');
         $generated = [];
 
         foreach ($items as $item) {
@@ -4010,7 +4134,7 @@ final class api {
             }
 
             try {
-                $generated[] = self::generate_certificate_using_bc(
+                $content = self::generate_certificate_using_bc(
                     $model,
                     $student,
                     $course,
@@ -4018,15 +4142,21 @@ final class api {
                     $item,
                     $compressionprofile
                 );
+                if (!is_string($content) || $content === '') {
+                    continue;
+                }
+
+                $temppath = self::write_pdf_temp_file($content, $tempdir, 'spotawardcompact' . (int)$item->id);
+                if ($temppath !== '') {
+                    $generated[] = $temppath;
+                }
             } catch (\Throwable $e) {
                 debugging('Certificate generation failed for compact admin share item ' .
                     $item->id . ': ' . $e->getMessage(), DEBUG_DEVELOPER);
             }
         }
 
-        return array_values(array_filter($generated, static function($content) {
-            return is_string($content) && $content !== '';
-        }));
+        return $generated;
     }
 
     /**
@@ -4075,11 +4205,6 @@ final class api {
             throw new moodle_exception('nocertificates', 'local_spotaward');
         }
 
-        $zipfiles = [];
-        foreach ($files as $file) {
-            $zipfiles[$file->get_filename()] = [$file->get_content()];
-        }
-
         require_once(__DIR__ . '/../../../../lib/filestorage/zip_packer.php');
 
         check_dir_exists($CFG->tempdir . '/zip');
@@ -4088,24 +4213,47 @@ final class api {
             throw new moodle_exception('generalexceptionmessage', 'error', '', 'Unable to create ZIP archive.');
         }
 
-        $zipper = new \zip_packer();
-        $result = $zipper->archive_to_pathname($zipfiles, $tmpzip);
-        if (!$result || !is_file($tmpzip)) {
-            @unlink($tmpzip);
-            throw new moodle_exception('generalexceptionmessage', 'error', '', 'Unable to create ZIP archive.');
+        $tempdir = make_temp_directory('spotaward_zip_sources');
+        $zipfiles = [];
+        foreach ($files as $index => $file) {
+            $content = $file->get_content();
+            if (!is_string($content) || $content === '') {
+                continue;
+            }
+
+            $temppath = self::write_pdf_temp_file($content, $tempdir, 'spotawardzip' . $index);
+            if ($temppath !== '') {
+                $zipfiles[$file->get_filename()] = $temppath;
+            }
         }
 
-        $zipcontent = file_get_contents($tmpzip);
-        if ($zipcontent === false) {
+        if (empty($zipfiles)) {
             @unlink($tmpzip);
-            throw new moodle_exception('generalexceptionmessage', 'error', '', 'Unable to read ZIP archive.');
+            throw new moodle_exception('nocertificates', 'local_spotaward');
         }
 
-        return [
-            'path' => $tmpzip,
-            'name' => $zipbasename . '.zip',
-            'content' => $zipcontent,
-        ];
+        try {
+            $zipper = new \zip_packer();
+            $result = $zipper->archive_to_pathname($zipfiles, $tmpzip);
+            if (!$result || !is_file($tmpzip)) {
+                @unlink($tmpzip);
+                throw new moodle_exception('generalexceptionmessage', 'error', '', 'Unable to create ZIP archive.');
+            }
+
+            $zipcontent = file_get_contents($tmpzip);
+            if ($zipcontent === false) {
+                @unlink($tmpzip);
+                throw new moodle_exception('generalexceptionmessage', 'error', '', 'Unable to read ZIP archive.');
+            }
+
+            return [
+                'path' => $tmpzip,
+                'name' => $zipbasename . '.zip',
+                'content' => $zipcontent,
+            ];
+        } finally {
+            self::cleanup_temp_files(array_values($zipfiles));
+        }
     }
 
     /**
@@ -4121,12 +4269,11 @@ final class api {
             array $certificatepdf): array {
         global $CFG;
 
-        $prcontent = file_get_contents($prpath);
-        if ($prcontent === false) {
+        if (!is_file($prpath)) {
             throw new moodle_exception('invalidparameter');
         }
 
-        if (strlen($prcontent) > self::ADMIN_SHARE_MAX_BYTES) {
+        if ((filesize($prpath) ?: 0) > self::ADMIN_SHARE_MAX_BYTES) {
             throw new moodle_exception('adminshareattachmenttoolarge', 'local_spotaward');
         }
 
@@ -4140,8 +4287,8 @@ final class api {
 
         $zipper = new \zip_packer();
         $zipfiles = [
-            'pr_document/' . clean_filename($prfilename) => [$prcontent],
-            'certificates/' . clean_filename($certificatepdf['name']) => [$certificatepdf['content']],
+            'pr_document/' . clean_filename($prfilename) => $prpath,
+            'certificates/' . clean_filename($certificatepdf['name']) => $certificatepdf['path'],
         ];
 
         $result = $zipper->archive_to_pathname($zipfiles, $tmpzip);
@@ -4172,16 +4319,15 @@ final class api {
             string $prpath, string $prfilename): array {
         global $CFG;
 
-        $prcontent = file_get_contents($prpath);
-        if ($prcontent === false) {
+        if (!is_file($prpath)) {
             throw new moodle_exception('invalidparameter');
         }
 
-        if (strlen($prcontent) > self::ADMIN_SHARE_MAX_BYTES) {
+        if ((filesize($prpath) ?: 0) > self::ADMIN_SHARE_MAX_BYTES) {
             throw new moodle_exception('adminshareattachmenttoolarge', 'local_spotaward');
         }
 
-        $compactcertificates = self::generate_nomination_certificate_file_map($nominationid, 'adminshare');
+        $compactcertificates = self::generate_nomination_certificate_file_path_map($nominationid, 'adminshare');
         if (empty($compactcertificates)) {
             throw new moodle_exception('nocertificates', 'local_spotaward');
         }
@@ -4194,34 +4340,38 @@ final class api {
             throw new moodle_exception('generalexceptionmessage', 'error', '', 'Unable to create ZIP archive.');
         }
 
-        $zipfiles = [
-            'pr_document/' . clean_filename($prfilename) => [$prcontent],
-        ];
-        foreach ($compactcertificates as $certfilename => $certcontent) {
-            $zipfiles['certificates/' . clean_filename($certfilename)] = [$certcontent];
-        }
+        try {
+            $zipfiles = [
+                'pr_document/' . clean_filename($prfilename) => $prpath,
+            ];
+            foreach ($compactcertificates as $certfilename => $certpath) {
+                $zipfiles['certificates/' . clean_filename($certfilename)] = $certpath;
+            }
 
-        $zipper = new \zip_packer();
-        $result = $zipper->archive_to_pathname($zipfiles, $tmpzip);
-        if (!$result || !is_file($tmpzip)) {
-            @unlink($tmpzip);
-            throw new moodle_exception('generalexceptionmessage', 'error', '', 'Unable to create ZIP archive.');
-        }
+            $zipper = new \zip_packer();
+            $result = $zipper->archive_to_pathname($zipfiles, $tmpzip);
+            if (!$result || !is_file($tmpzip)) {
+                @unlink($tmpzip);
+                throw new moodle_exception('generalexceptionmessage', 'error', '', 'Unable to create ZIP archive.');
+            }
 
-        return [
-            'path' => $tmpzip,
-            'name' => self::get_certificate_zip_basename($nominationid) . '_admin_documents.zip',
-        ];
+            return [
+                'path' => $tmpzip,
+                'name' => self::get_certificate_zip_basename($nominationid) . '_admin_documents.zip',
+            ];
+        } finally {
+            self::cleanup_temp_files(array_values($compactcertificates));
+        }
     }
 
     /**
-     * Generate certificate filenames mapped to PDF contents for a nomination.
+     * Generate certificate filenames mapped to temp PDF paths for a nomination.
      *
      * @param int $nominationid
      * @param string $compressionprofile
      * @return array
      */
-    private static function generate_nomination_certificate_file_map(int $nominationid,
+    private static function generate_nomination_certificate_file_path_map(int $nominationid,
             string $compressionprofile = 'default'): array {
         $nomination = self::get_nomination($nominationid);
         if (!in_array($nomination->status, ['ssteamprogress', 'closed'], true)) {
@@ -4232,6 +4382,7 @@ final class api {
         $model = self::get_beautiful_certificate_model($templateid);
         $course = get_course($nomination->courseid);
         $items = self::get_nomination_items($nominationid);
+        $tempdir = make_temp_directory('spotaward_compact_admin_bundle_certs');
         $generated = [];
 
         foreach ($items as $item) {
@@ -4245,8 +4396,7 @@ final class api {
             }
 
             try {
-                $generated[self::get_certificate_filename((int)$item->id, (int)$student->id)] =
-                    self::generate_certificate_using_bc(
+                $content = self::generate_certificate_using_bc(
                         $model,
                         $student,
                         $course,
@@ -4254,15 +4404,21 @@ final class api {
                         $item,
                         $compressionprofile
                     );
+                if (!is_string($content) || $content === '') {
+                    continue;
+                }
+
+                $temppath = self::write_pdf_temp_file($content, $tempdir, 'spotawardbundle' . (int)$item->id);
+                if ($temppath !== '') {
+                    $generated[self::get_certificate_filename((int)$item->id, (int)$student->id)] = $temppath;
+                }
             } catch (\Throwable $e) {
                 debugging('Certificate generation failed for compact admin certificate file ' .
                     $item->id . ': ' . $e->getMessage(), DEBUG_DEVELOPER);
             }
         }
 
-        return array_filter($generated, static function($content) {
-            return is_string($content) && $content !== '';
-        });
+        return $generated;
     }
 
     /**
@@ -4302,7 +4458,7 @@ final class api {
             throw new moodle_exception('selectrecordsfordownload', 'local_spotaward');
         }
 
-        $pdfcontents = [];
+        $storedfiles = [];
         foreach ($nominationids as $nominationid) {
             $nomination = self::get_nomination($nominationid);
             if (empty($nomination->adminsharedtime)) {
@@ -4311,11 +4467,11 @@ final class api {
 
             self::ensure_nomination_certificates_generated($nominationid);
             foreach (self::get_all_certificate_files($nominationid) as $file) {
-                $pdfcontents[] = $file->get_content();
+                $storedfiles[] = $file;
             }
         }
 
-        $mergedpdf = self::merge_pdf_documents($pdfcontents, 'spotaward_admin_certificates.pdf');
+        $mergedpdf = self::merge_stored_pdf_files($storedfiles, 'spotaward_admin_certificates.pdf');
         if ($mergedpdf === '') {
             throw new moodle_exception('nocertificates', 'local_spotaward');
         }
