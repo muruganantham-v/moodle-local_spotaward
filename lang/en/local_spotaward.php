@@ -315,6 +315,7 @@ $string['cliqtemplatesheading'] = 'Cliq templates';
 $string['emailtemplateplaceholders'] = 'Available placeholders: {{course}}, {{module}}, {{professional}}, {{mentor_name}}, {{program_manager_name}}, {{maac_executive_name}}, {{nominator_name}}, {{recipient_name}}, {{total_students}}, {{certificate_mode}}, {{moodle_link}}, {{description}}, {{award_summary}}, {{award_summary_html}}, {{status}}, {{decision}}, {{decision_message}}, {{pm_comments}}, {{closure_date}}, {{closed_by}}, {{student_name}}, {{student_firstname}}, {{student_lastname}}, {{student_email}}, {{student_username}}, {{award_category}}, {{award_description}}, {{certificate_filename}}';
 $string['searchtable'] = 'Search table';
 $string['keywordsearch'] = 'Search by keyword';
+$string['historysearchplaceholder'] = 'Search by course, module, or status';
 $string['clearfilters'] = 'Clear filters';
 $string['filterby'] = 'Filter by';
 $string['alloptions'] = 'All';

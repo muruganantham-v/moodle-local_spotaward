@@ -89,7 +89,6 @@ final class renderer extends plugin_renderer_base {
         }
 
         $columns = [
-            ['key' => 'id', 'label' => get_string('submissionid', 'local_spotaward'), 'type' => 'number', 'filter' => 'none'],
             ['key' => 'submitteddate', 'label' => get_string('submitteddate', 'local_spotaward'), 'type' => 'date', 'filter' => 'date'],
             ['key' => 'coursename', 'label' => get_string('course', 'local_spotaward'), 'type' => 'text', 'filter' => 'select'],
             ['key' => 'module', 'label' => get_string('module', 'local_spotaward'), 'type' => 'text', 'filter' => 'select'],
@@ -101,7 +100,6 @@ final class renderer extends plugin_renderer_base {
         foreach ($rows as $row) {
             $timestamp = !empty($row['submittedtimestamp']) ? (int)$row['submittedtimestamp'] : 0;
             $tablerows[] = [
-                'id' => \local_spotaward_table_cell(s((string)$row['id']), ['text' => (string)$row['id'], 'sort' => (int)$row['id']]),
                 'submitteddate' => \local_spotaward_table_cell(s($row['submitteddate']), [
                     'text' => (string)$row['submitteddate'],
                     'sort' => $timestamp,
@@ -122,7 +120,8 @@ final class renderer extends plugin_renderer_base {
             \local_spotaward_render_data_table($columns, $tablerows, [
                 'id' => 'spotaward-submission-history',
                 'label' => get_string('submissionhistory', 'local_spotaward'),
-                'nosearch' => true,
+                'searchlabel' => get_string('searchtable', 'local_spotaward'),
+                'searchplaceholder' => get_string('historysearchplaceholder', 'local_spotaward'),
             ])
         );
     }
