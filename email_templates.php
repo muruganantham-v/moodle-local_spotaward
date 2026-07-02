@@ -16,6 +16,28 @@ $PAGE->set_title(get_string('emailtemplatesettings', 'local_spotaward'));
 $PAGE->set_heading(get_string('emailtemplatesettings', 'local_spotaward'));
 local_spotaward_require_stylesheet();
 local_spotaward_require_action_success_overlay();
+$PAGE->requires->js_init_code(
+    "document.addEventListener('click', function(e) {
+        var button = e.target.closest('.spotaward-template-reset');
+        if (!button) {
+            return;
+        }
+
+        e.preventDefault();
+
+        var subject = document.getElementById(button.getAttribute('data-subject'));
+        var body = document.getElementById(button.getAttribute('data-body'));
+
+        if (subject) {
+            subject.value = '';
+            subject.dispatchEvent(new Event('change', {bubbles: true}));
+        }
+        if (body) {
+            body.value = '';
+            body.dispatchEvent(new Event('change', {bubbles: true}));
+        }
+    });"
+);
 
 $mform = new email_templates_form();
 
