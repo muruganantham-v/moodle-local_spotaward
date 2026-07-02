@@ -4547,18 +4547,44 @@ final class api {
     public static function get_student_report(int $studentid, int $courseid, string $activitytype = ''): array {
         $student = core_user::get_user($studentid, '*', MUST_EXIST);
         $report = self::build_course_activity_report($courseid, [$student], $activitytype);
+        $studentrows = $report['rowsbystudent'][$studentid] ?? [];
+        $studentsummaryrows = $report['summarybystudent'][$studentid] ?? [];
 
         return [
             'activitytype' => $report['activitytype'],
             'activitycount' => count($report['activities']),
             'studentcount' => 1,
-            'rows' => $report['rowsbystudent'][$studentid] ?? [],
-            'summaryrows' => $report['summarybystudent'][$studentid] ?? [],
-            'summary' => [
-                'attendance' => self::get_attendance_percentage($studentid, $courseid),
-                'assignmentcompletion' => self::get_assignment_completion($studentid, $courseid),
-                'projectcompletion' => self::get_project_completion($studentid, $courseid),
-            ],
+            'rows' => $studentrows,
+            'summaryrows' => $studentsummaryrows,
+            'summary' => self::derive_student_report_summary($studentrows, $studentsummaryrows),
+        ];
+    }
+
+    /**
+     * Build student summary metrics from already-generated report data.
+     *
+     * @param array $rows
+     * @param array $summaryrows
+     * @return array
+     */
+    private static function derive_student_report_summary(array $rows, array $summaryrows): array {
+        $summarybyactivity = [];
+        foreach ($summaryrows as $row) {
+            $activity = (string)($row['activity'] ?? '');
+            if ($activity === '') {
+                continue;
+            }
+            $summarybyactivity[$activity] = $row;
+        }
+
+        $attendancekey = get_string('attendancelabel', 'local_spotaward');
+        $assignmentkey = get_string('assignments', 'local_spotaward');
+        $projectkey = get_string('projects', 'local_spotaward');
+
+        return [
+            'attendance' => (string)($summarybyactivity[$attendancekey]['percentage'] ?? '-'),
+            'assignmentcompletion' => (string)($summarybyactivity[$assignmentkey]['completionrate'] ?? '-'),
+            'projectcompletion' => (string)($summarybyactivity[$projectkey]['completionrate'] ?? '-'),
         ];
     }
 
