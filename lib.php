@@ -135,7 +135,11 @@ function local_spotaward_require_action_success_overlay(): void {
  * @return void
  */
 function local_spotaward_success_redirect(moodle_url $destination, string $details = '', int $seconds = 3): void {
-    redirect($destination);
+    if ($details === '') {
+        redirect($destination);
+    }
+
+    redirect($destination, $details, $seconds, \core\output\notification::NOTIFY_SUCCESS);
 }
 
 function local_spotaward_extend_navigation(global_navigation $nav): void {
