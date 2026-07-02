@@ -201,6 +201,7 @@ $string['uploadprdocument'] = 'Upload PR Document';
 $string['attachcertificatestoemail'] = 'Attach certificates to the email';
 $string['sendtoadmin'] = 'Send to Admin';
 $string['sharedtoadminsuccess'] = 'PR document shared with Admin successfully.';
+$string['invalidprpdf'] = 'Please upload a valid PDF file for the PR document.';
 $string['alreadysent'] = 'Already sent';
 $string['noadminconfigured'] = 'No active users are assigned to the configured Admin role.';
 $string['admindownloaded'] = 'Downloaded';

@@ -46,7 +46,8 @@ if ($mform->is_cancelled()) {
     }
 
     try {
-        api::send_pr_document_to_admin($id, $USER->id, $temppath, clean_filename($filename),
+        $filename = api::validate_admin_pr_document_upload($temppath, $filename);
+        api::send_pr_document_to_admin($id, $USER->id, $temppath, $filename,
             !empty($data->attachcertificates));
     } finally {
         if (is_file($temppath)) {

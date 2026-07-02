@@ -1408,6 +1408,38 @@ final class api {
     }
 
     /**
+     * Validate a Share to Admin PR document upload.
+     *
+     * @param string $filepath Temporary uploaded file path
+     * @param string $filename Original uploaded file name
+     * @return string Cleaned file name
+     */
+    public static function validate_admin_pr_document_upload(string $filepath, string $filename): string {
+        $filename = clean_filename($filename);
+        if ($filename === '' || !preg_match('/\.pdf$/i', $filename)) {
+            throw new moodle_exception('invalidprpdf', 'local_spotaward');
+        }
+
+        if (!is_file($filepath) || filesize($filepath) < 5) {
+            throw new moodle_exception('invalidprpdf', 'local_spotaward');
+        }
+
+        $handle = @fopen($filepath, 'rb');
+        if ($handle === false) {
+            throw new moodle_exception('invalidprpdf', 'local_spotaward');
+        }
+
+        $signature = fread($handle, 5);
+        fclose($handle);
+
+        if ($signature !== '%PDF-') {
+            throw new moodle_exception('invalidprpdf', 'local_spotaward');
+        }
+
+        return $filename;
+    }
+
+    /**
      * Send notification when a record is closed.
      *
      * @param int $nominationid
