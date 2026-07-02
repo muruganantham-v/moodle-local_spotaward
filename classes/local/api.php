@@ -5509,6 +5509,8 @@ final class api {
         $syscontextid = \context_system::instance()->id;
         $params = ['userid' => $userid, 'syscontextid' => $syscontextid];
         $where = "n.programmanagerid = :userid";
+        $itemaggjoin = self::get_nomination_item_aggregate_join_sql();
+        $fileaggjoin = self::get_certificate_file_aggregate_join_sql();
 
         if ($statusfilter === 'active') {
             $where .= " AND n.status IN ('pending', 'ssteamprogress')";
@@ -5519,20 +5521,15 @@ final class api {
         $sql = "SELECT n.*, c.fullname AS coursename,
                        u.firstname, u.lastname,
                        maac.firstname AS maacfirstname, maac.lastname AS maaclastname,
-                       (SELECT COUNT(1) FROM {spotaward_nomination_items} ni
-                         WHERE ni.nominationid = n.id) AS totalitems,
-                       (SELECT COUNT(1) FROM {spotaward_nomination_items} ni
-                         WHERE ni.nominationid = n.id AND ni.status IN ('ssteamprogress', 'rejected', 'closed')) AS revieweditems,
-                       (SELECT COUNT(1) FROM {files} f
-                         WHERE f.contextid = :syscontextid
-                           AND f.component = 'local_spotaward'
-                           AND f.filearea = 'certificates'
-                           AND f.itemid = n.id
-                           AND f.filename <> '.') AS certificatesexist
+                       COALESCE(ni_agg.totalitems, 0) AS totalitems,
+                       COALESCE(ni_agg.revieweditems, 0) AS revieweditems,
+                       COALESCE(cert_agg.certificatesexist, 0) AS certificatesexist
                   FROM {spotaward_nominations} n
                   JOIN {course} c ON c.id = n.courseid
                   JOIN {user} u ON u.id = n.nominatorid
              LEFT JOIN {user} maac ON maac.id = n.maacexecutiveid
+                  {$itemaggjoin}
+                  {$fileaggjoin}
                  WHERE {$where}
                ORDER BY n.timecreated DESC";
 
@@ -5605,6 +5602,41 @@ final class api {
     }
 
     /**
+     * SQL join for aggregated nomination item counts.
+     *
+     * @return string
+     */
+    private static function get_nomination_item_aggregate_join_sql(): string {
+        return "LEFT JOIN (
+                    SELECT ni.nominationid,
+                           COUNT(1) AS totalitems,
+                           SUM(CASE WHEN ni.status IN ('ssteamprogress', 'rejected', 'closed') THEN 1 ELSE 0 END)
+                               AS revieweditems
+                      FROM {spotaward_nomination_items} ni
+                  GROUP BY ni.nominationid
+                ) ni_agg ON ni_agg.nominationid = n.id";
+    }
+
+    /**
+     * SQL join for aggregated certificate file counts.
+     *
+     * @param string $contextparam
+     * @return string
+     */
+    private static function get_certificate_file_aggregate_join_sql(string $contextparam = 'syscontextid'): string {
+        return "LEFT JOIN (
+                    SELECT f.itemid AS nominationid,
+                           COUNT(1) AS certificatesexist
+                      FROM {files} f
+                     WHERE f.contextid = :" . $contextparam . "
+                       AND f.component = 'local_spotaward'
+                       AND f.filearea = 'certificates'
+                       AND f.filename <> '.'
+                  GROUP BY f.itemid
+                ) cert_agg ON cert_agg.nominationid = n.id";
+    }
+
+    /**
      * Get manager dashboard data.
      *
      * @param int $mentorid
@@ -5652,28 +5684,25 @@ final class api {
 
         $syscontextid = \context_system::instance()->id;
         $params['syscontextid'] = $syscontextid;
+        $itemaggjoin = self::get_nomination_item_aggregate_join_sql();
+        $fileaggjoin = self::get_certificate_file_aggregate_join_sql();
 
         $sql = "SELECT n.*, c.fullname AS coursename,
                        mentor.firstname AS mentorfirstname, mentor.lastname AS mentorlastname,
                        pm.firstname AS pmfirstname, pm.lastname AS pmlastname,
                        maac.firstname AS maacfirstname, maac.lastname AS maaclastname,
-                       (SELECT COUNT(1) FROM {spotaward_nomination_items} ni
-                         WHERE ni.nominationid = n.id) AS totalitems,
-                       (SELECT COUNT(1) FROM {spotaward_nomination_items} ni
-                         WHERE ni.nominationid = n.id AND ni.status IN ('ssteamprogress', 'rejected', 'closed')) AS revieweditems,
-                       (SELECT COUNT(1) FROM {files} f
-                         WHERE f.contextid = :syscontextid
-                           AND f.component = 'local_spotaward'
-                           AND f.filearea = 'certificates'
-                           AND f.itemid = n.id
-                           AND f.filename <> '.') AS certificatesexist
+                       COALESCE(ni_agg.totalitems, 0) AS totalitems,
+                       COALESCE(ni_agg.revieweditems, 0) AS revieweditems,
+                       COALESCE(cert_agg.certificatesexist, 0) AS certificatesexist
                   FROM {spotaward_nominations} n
                   JOIN {course} c ON c.id = n.courseid
                   JOIN {user} mentor ON mentor.id = n.nominatorid
                   JOIN {user} pm ON pm.id = n.programmanagerid
              LEFT JOIN {user} maac ON maac.id = n.maacexecutiveid
+                  {$itemaggjoin}
+                  {$fileaggjoin}
                   {$combinedsql}
-              ORDER BY n.timecreated DESC";
+               ORDER BY n.timecreated DESC";
 
         return [
             'counts' => $counts,
