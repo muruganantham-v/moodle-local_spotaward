@@ -164,13 +164,23 @@ final class email_templates_form extends moodleform {
     public function definition() {
         $mform = $this->_form;
 
-        $mform->addElement('static', 'templatedefaultnote', '',
-            get_string('emailtemplatedefaultnote', 'local_spotaward'));
+        $mform->addElement('html', html_writer::div(
+            get_string('emailtemplatedefaultnote', 'local_spotaward'),
+            'spotaward-template-intro'
+        ));
 
         $mform->addElement('header', 'email_templates_heading', get_string('emailtemplatesheading', 'local_spotaward'));
+        $mform->addElement('html', html_writer::div(
+            get_string('emailtemplateemailformatnote', 'local_spotaward'),
+            'spotaward-template-channel-note'
+        ));
         self::add_template_fields($mform, self::fields(), 'email');
 
         $mform->addElement('header', 'cliq_templates_heading', get_string('cliqtemplatesheading', 'local_spotaward'));
+        $mform->addElement('html', html_writer::div(
+            get_string('emailtemplatecliqformatnote', 'local_spotaward'),
+            'spotaward-template-channel-note'
+        ));
         self::add_template_fields($mform, self::cliq_fields(), 'cliq');
 
         $this->add_action_buttons(true, get_string('savechanges'));
@@ -186,13 +196,14 @@ final class email_templates_form extends moodleform {
      */
     private static function add_template_fields($mform, array $fields, string $channel): void {
         $currentgroup = null;
+        $groupplaceholders = self::build_group_placeholders_map($fields);
         foreach ($fields as $field) {
             if ($field['group'] !== $currentgroup) {
                 $currentgroup = $field['group'];
-                $mform->addElement('html', html_writer::tag(
-                    'h4',
-                    get_string('templategroup_' . $currentgroup, 'local_spotaward'),
-                    ['class' => 'mt-4 mb-3']
+                $mform->addElement('html', self::build_group_header_html(
+                    $currentgroup,
+                    $groupplaceholders[$currentgroup] ?? [],
+                    $channel
                 ));
             }
 
@@ -206,8 +217,6 @@ final class email_templates_form extends moodleform {
                     get_string($subject . '_desc', 'local_spotaward'));
             }
 
-            $mform->addElement('html', self::build_placeholder_reference_html($field['placeholders'] ?? []));
-
             $mform->addElement('text', $subject, get_string($subject, 'local_spotaward'), ['size' => 80]);
             $mform->setType($subject, PARAM_TEXT);
 
@@ -217,6 +226,59 @@ final class email_templates_form extends moodleform {
 
             $mform->addElement('html', self::build_reset_button_html($field));
         }
+    }
+
+    /**
+     * Build placeholder union per notification group.
+     *
+     * @param array $fields
+     * @return array
+     */
+    private static function build_group_placeholders_map(array $fields): array {
+        $map = [];
+        foreach ($fields as $field) {
+            $group = $field['group'] ?? 'general';
+            $map[$group] = $map[$group] ?? [];
+            foreach ($field['placeholders'] ?? [] as $placeholder) {
+                $map[$group][$placeholder] = $placeholder;
+            }
+        }
+
+        foreach ($map as $group => $placeholders) {
+            $map[$group] = array_values($placeholders);
+        }
+
+        return $map;
+    }
+
+    /**
+     * Build group header and shared variable reference HTML.
+     *
+     * @param string $group
+     * @param array $placeholders
+     * @param string $channel
+     * @return string
+     */
+    private static function build_group_header_html(string $group, array $placeholders, string $channel): string {
+        $title = html_writer::tag(
+            'h4',
+            get_string('templategroup_' . $group, 'local_spotaward'),
+            ['class' => 'spotaward-subsection-title mb-2']
+        );
+
+        if ($channel === 'cliq') {
+            $note = html_writer::div(
+                get_string('emailtemplatecliqsharesvars', 'local_spotaward'),
+                'spotaward-template-group-note'
+            );
+
+            return html_writer::div($title . $note, 'spotaward-template-group');
+        }
+
+        return html_writer::div(
+            $title . self::build_placeholder_reference_html($placeholders),
+            'spotaward-template-group'
+        );
     }
 
     /**
@@ -230,14 +292,14 @@ final class email_templates_form extends moodleform {
             return html_writer::tag(
                 'span',
                 '{{' . $placeholder . '}}',
-                ['class' => 'badge badge-light border mr-2 mb-2 p-2']
+                ['class' => 'spotaward-template-chip']
             );
         }, $placeholders);
 
         return html_writer::div(
-            html_writer::tag('strong', get_string('availablevariables', 'local_spotaward')) . '<br>' .
-            implode('', $items),
-            'alert alert-light mb-3'
+            html_writer::tag('strong', get_string('availablevariables', 'local_spotaward')) .
+            html_writer::div(implode('', $items), 'spotaward-template-chip-list'),
+            'spotaward-template-variable-panel'
         );
     }
 
@@ -259,8 +321,9 @@ final class email_templates_form extends moodleform {
             ]
         );
 
-        $help = html_writer::tag('span', get_string('templateoverridehelp', 'local_spotaward'), ['class' => 'ml-2']);
+        $help = html_writer::tag('span', get_string('templateoverridehelp', 'local_spotaward'),
+            ['class' => 'spotaward-template-help-text']);
 
-        return html_writer::div($button . $help, 'mb-4');
+        return html_writer::div($button . $help, 'spotaward-template-actions mb-4');
     }
 }

@@ -72,12 +72,14 @@ if ($mform->is_cancelled()) {
 
 echo $OUTPUT->header();
 echo html_writer::start_div('local-spotaward-app');
+echo html_writer::start_div('spotaward-shell');
 echo html_writer::link(
     new moodle_url('/admin/settings.php', ['section' => 'local_spotaward_settings']),
     get_string('back'),
     ['class' => 'btn btn-secondary mb-3']
 );
-echo html_writer::tag('h3', get_string('emailtemplatesettings', 'local_spotaward'), ['class' => 'mb-3']);
+echo html_writer::tag('h3', get_string('emailtemplatesettings', 'local_spotaward'), ['class' => 'spotaward-section-title']);
 $mform->display();
+echo html_writer::end_div();
 echo html_writer::end_div();
 echo $OUTPUT->footer();

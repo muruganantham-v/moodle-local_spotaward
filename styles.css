@@ -322,6 +322,69 @@
   padding: 0;
 }
 
+.spotaward-template-intro,
+.spotaward-template-channel-note,
+.spotaward-template-variable-panel,
+.spotaward-template-group-note {
+  border: 1px solid var(--sa-border);
+  border-radius: 10px;
+  background: linear-gradient(180deg, #f8fbff 0%, #ffffff 100%);
+  color: var(--sa-text-dark);
+}
+
+.spotaward-template-intro {
+  margin: 0 0 20px;
+  padding: 14px 16px;
+}
+
+.spotaward-template-channel-note,
+.spotaward-template-group-note {
+  margin: 0 0 18px;
+  padding: 12px 14px;
+  color: var(--sa-text-gray);
+}
+
+.spotaward-template-group {
+  margin: 24px 0 12px;
+}
+
+.spotaward-template-variable-panel {
+  padding: 14px 16px;
+  margin: 0 0 14px;
+}
+
+.spotaward-template-chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.spotaward-template-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: var(--sa-primary-soft);
+  border: 1px solid #c8d8f5;
+  color: var(--sa-primary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.spotaward-template-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.spotaward-template-help-text {
+  color: var(--sa-text-gray);
+  font-size: 12px;
+}
+
 /* ==================== 6. CARDS ==================== */
 .spotaward-card {
   background: var(--sa-surface);
