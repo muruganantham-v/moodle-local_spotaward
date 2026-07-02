@@ -1387,39 +1387,6 @@ final class api {
     }
 
     /**
-     * Get configured users from a multiselect config field.
-     *
-     * @param string $configkey
-     * @return array
-     */
-    private static function get_configured_users(string $configkey): array {
-        global $DB;
-
-        $value = get_config('local_spotaward', $configkey);
-        if (empty($value)) {
-            return [];
-        }
-
-        $emails = preg_split('/[\s,;]+/', (string)$value, -1, PREG_SPLIT_NO_EMPTY);
-        $users = [];
-
-        foreach ($emails as $email) {
-            $email = trim(strtolower($email));
-            if ($email === '' || !validate_email($email)) {
-                continue;
-            }
-
-            $user = $DB->get_record('user', ['email' => $email, 'deleted' => 0, 'suspended' => 0],
-                'id, firstname, lastname, email');
-            if ($user) {
-                $users[$user->id] = $user;
-            }
-        }
-
-        return array_values($users);
-    }
-
-    /**
      * Get active Admin users from the configured Admin role.
      *
      * @return array
