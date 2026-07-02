@@ -398,5 +398,26 @@ function xmldb_local_spotaward_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026052704, 'local', 'spotaward');
     }
 
+    if ($oldversion < 2026070101) {
+        $dbman = $DB->get_manager();
+        $nominationtable = new xmldb_table('spotaward_nominations');
+
+        $downloadedtimefield = new xmldb_field('admindownloadedtime', XMLDB_TYPE_INTEGER, '10', null,
+            XMLDB_NOTNULL, null, '0', 'adminsharedby');
+        if (!$dbman->field_exists($nominationtable, $downloadedtimefield)) {
+            $dbman->add_field($nominationtable, $downloadedtimefield);
+        }
+
+        $downloadedbyfield = new xmldb_field('admindownloadedby', XMLDB_TYPE_INTEGER, '10', null,
+            XMLDB_NOTNULL, null, '0', 'admindownloadedtime');
+        if (!$dbman->field_exists($nominationtable, $downloadedbyfield)) {
+            $dbman->add_field($nominationtable, $downloadedbyfield);
+        }
+
+        unset_config('admin_team_members', 'local_spotaward');
+
+        upgrade_plugin_savepoint(true, 2026070101, 'local', 'spotaward');
+    }
+
     return true;
 }

@@ -441,6 +441,141 @@
   color: #f57c00;
 }
 
+.spotaward-report-card-meta {
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--sa-text-gray);
+  font-weight: 600;
+}
+
+.spotaward-report-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+}
+
+.spotaward-report-mini-card {
+  border: 1px solid var(--sa-border);
+  border-radius: 12px;
+  background: linear-gradient(180deg, #ffffff 0%, #f9fbfd 100%);
+  padding: 18px;
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.05);
+}
+
+.spotaward-report-mini-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--sa-text-dark);
+  margin-bottom: 14px;
+}
+
+.spotaward-report-mini-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.spotaward-report-mini-metric {
+  padding: 12px;
+  border-radius: 10px;
+  background: var(--sa-bg-light);
+  border: 1px solid var(--sa-border);
+}
+
+.spotaward-report-mini-value {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--sa-text-dark);
+}
+
+.spotaward-report-mini-label {
+  margin-top: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--sa-text-gray);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.spotaward-report-mini-meta {
+  margin-top: 12px;
+  font-size: 12px;
+  color: var(--sa-text-gray);
+  font-weight: 600;
+}
+
+.spotaward-report-two-column {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 20px;
+  margin-bottom: 30px;
+}
+
+.spotaward-report-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.spotaward-report-list-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 16px;
+  border: 1px solid var(--sa-border);
+  border-radius: 10px;
+  background: #fff;
+}
+
+.spotaward-report-list-main {
+  min-width: 0;
+}
+
+.spotaward-report-list-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--sa-text-dark);
+}
+
+.spotaward-report-list-meta {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--sa-text-gray);
+}
+
+.spotaward-report-list-side {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.spotaward-report-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: #e3f2fd;
+  color: #0d47a1;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.spotaward-report-pill.is-soft {
+  background: #fff3e0;
+  color: #e65100;
+}
+
+.spotaward-distribution-table {
+  margin-bottom: 0;
+}
+
 /* ==================== 7. META GRID ==================== */
 .spotaward-meta {
   display: grid;
@@ -882,6 +1017,18 @@
   border: 1px solid #c8e6c9;
 }
 
+.spotaward-badge-downloaded {
+  background: #e8f5e9;
+  color: #1b5e20;
+  border: 1px solid #a5d6a7;
+}
+
+.spotaward-badge-notdownloaded {
+  background: #fff3e0;
+  color: #e65100;
+  border: 1px solid #ffcc80;
+}
+
 /* ==================== 20. ACTION ROW ==================== */
 .spotaward-action-row {
   display: flex;
@@ -1230,6 +1377,70 @@
   color: var(--sa-text-gray);
   font-size: 12px;
   white-space: nowrap;
+}
+
+.spotaward-suggested-block {
+  margin: 10px 0 12px;
+  padding: 12px;
+  border: 1px solid #d8e7d9;
+  border-radius: 10px;
+  background: #f7fbf7;
+}
+
+.spotaward-suggested-heading {
+  margin-bottom: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #4f6b52;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.spotaward-suggested-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.spotaward-suggested-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border: 1px solid #d0e2d2;
+  border-radius: 999px;
+  background: #ffffff;
+  color: var(--sa-text-dark);
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
+}
+
+.spotaward-suggested-chip:hover {
+  background: #eef8ef;
+  border-color: #b9d6bc;
+  transform: translateY(-1px);
+}
+
+.spotaward-suggested-chip.is-selected {
+  background: #e5f4e6;
+  border-color: #91bf96;
+}
+
+.spotaward-suggested-chip-name {
+  font-weight: 600;
+}
+
+.spotaward-suggested-chip-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: #edf7ee;
+  color: #557d5a;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
 }
 
 /* ==================== 24. EXPORT BAR (top of table) ==================== */
@@ -1658,6 +1869,19 @@
 
   .spotaward-summary-grid {
     grid-template-columns: 1fr;
+  }
+
+  .spotaward-report-mini-metrics {
+    grid-template-columns: 1fr;
+  }
+
+  .spotaward-report-list-item {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .spotaward-report-list-side {
+    justify-content: flex-start;
   }
 }
 

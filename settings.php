@@ -106,12 +106,12 @@ $settings->add(new admin_setting_configselect(
         ''
     ));
 
-    $settings->add(new admin_setting_configtextarea(
-        'local_spotaward/admin_team_members',
-        get_string('admin_team_members', 'local_spotaward'),
-        get_string('admin_team_members_desc', 'local_spotaward'),
-        '',
-        PARAM_RAW_TRIMMED
+    $settings->add(new admin_setting_configselect(
+        'local_spotaward/admin_role',
+        get_string('admin_role_setting', 'local_spotaward'),
+        get_string('admin_role_setting_desc', 'local_spotaward'),
+        'admin',
+        $roleoptions
     ));
 
     $settings->add(new admin_setting_heading(

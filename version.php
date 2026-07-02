@@ -25,7 +25,7 @@
 defined('MOODLE_INTERNAL') || die();
 
 $plugin->component = 'local_spotaward';
-$plugin->version = 2026052704;
+$plugin->version = 2026070101;
 $plugin->requires = 2022041900;
 $plugin->release = '1.1.0';
 $plugin->maturity = MATURITY_BETA;

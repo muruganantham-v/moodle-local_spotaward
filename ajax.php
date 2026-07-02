@@ -86,11 +86,13 @@ foreach (api::get_maac_executives_for_course($courseid) as $maac) {
 
 $course = get_course($courseid);
 $categories = array_values(constants::award_categories_for_course($course->shortname, $course->fullname));
+$suggestions = api::get_nomination_suggestions($courseid, $USER->id);
 
 echo json_encode([
     'students'        => $students,
     'programmanagers' => $programmanagers,
     'maacexecutives'  => $maacexecutives,
     'categories'      => $categories,
+    'suggestions'     => $suggestions,
 ]);
 die();

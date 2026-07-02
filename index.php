@@ -80,6 +80,7 @@ $section = optional_param('section', 'form', PARAM_ALPHA);
 $isnominator = api::is_nominator($USER->id);
 $ispm = api::is_program_manager($USER->id);
 $isssteam = api::is_ss_team($USER->id);
+$isadmin = api::is_admin($USER->id);
 $ismanager = api::is_manager($USER->id);
 
 if ($view === '') {
@@ -89,6 +90,8 @@ if ($view === '') {
         $view = 'programmanager';
     } else if ($isssteam) {
         $view = 'ssteam';
+    } else if ($isadmin) {
+        $view = 'admin';
     } else {
         $view = 'manager';
     }
@@ -139,6 +142,17 @@ if (($ismanager || $isssteam) && optional_param('downloadallcert', 0, PARAM_INT)
     }
 
     api::download_all_certificates($downloadnomid);
+    exit;
+}
+
+if ($isadmin && optional_param('downloadadmincertificates', 0, PARAM_INT) && confirm_sesskey()) {
+    $selectednominationids = optional_param_array('nominationids', [], PARAM_INT);
+
+    while (ob_get_level()) {
+        ob_end_clean();
+    }
+
+    api::download_admin_certificates($selectednominationids, (int)$USER->id);
     exit;
 }
 
@@ -292,6 +306,9 @@ if ($ispm) {
 }
 if ($isssteam) {
     $tabs['ssteam'] = get_string('ssteamdashboard', 'local_spotaward');
+}
+if ($isadmin) {
+    $tabs['admin'] = get_string('admindashboard', 'local_spotaward');
 }
 if ($ismanager) {
     $tabs['manager'] = get_string('managerdashboard', 'local_spotaward');
@@ -543,6 +560,136 @@ if ($view === 'ssteam' && $isssteam) {
     echo html_writer::end_div();
     echo html_writer::end_div();
     echo html_writer::end_div();
+}
+
+if ($view === 'admin' && $isadmin) {
+    if (!in_array($section, ['active', 'closed'], true)) {
+        $section = 'active';
+    }
+
+    $records = api::get_admin_dashboard_data($section);
+    $formurl = new moodle_url('/local/spotaward/index.php', ['view' => 'admin', 'section' => $section]);
+    $formid = 'spotaward-admin-dashboard-form';
+    $buttonid = 'spotaward-admin-download-button';
+    $selectallid = 'spotaward-admin-select-all';
+
+    echo html_writer::start_div('spotaward-shell');
+    echo html_writer::tag('h3', get_string('admindashboard', 'local_spotaward'), ['class' => 'spotaward-section-title']);
+    echo html_writer::start_div('spotaward-subtabs mb-4');
+    echo html_writer::link(
+        new moodle_url('/local/spotaward/index.php', ['view' => 'admin', 'section' => 'active']),
+        get_string('activetab', 'local_spotaward'),
+        ['class' => 'spotaward-subtab' . ($section === 'active' ? ' is-active' : '')]
+    );
+    echo html_writer::link(
+        new moodle_url('/local/spotaward/index.php', ['view' => 'admin', 'section' => 'closed']),
+        get_string('closedtab', 'local_spotaward'),
+        ['class' => 'spotaward-subtab' . ($section === 'closed' ? ' is-active' : '')]
+    );
+    echo html_writer::end_div();
+
+    $columns = [
+        [
+            'key' => 'selectrecord',
+            'label' => html_writer::checkbox('selectall', 1, false, '', [
+                'id' => $selectallid,
+                'data-admin-select-all' => '1',
+                'aria-label' => get_string('selectallrecords', 'local_spotaward'),
+            ]),
+            'labelhtml' => true,
+            'type' => 'text',
+            'filter' => 'none',
+            'sortable' => false,
+            'searchable' => false,
+        ],
+        ['key' => 'submissiondate', 'label' => get_string('submitteddate', 'local_spotaward'), 'type' => 'date', 'filter' => 'date'],
+        ['key' => 'course', 'label' => get_string('course', 'local_spotaward'), 'type' => 'text', 'filter' => 'select'],
+        ['key' => 'maacexecutive', 'label' => get_string('maacexecutive', 'local_spotaward'), 'type' => 'text', 'filter' => 'select'],
+        ['key' => 'downloadstatus', 'label' => get_string('status', 'local_spotaward'), 'type' => 'text', 'filter' => 'select'],
+    ];
+
+    $rows = [];
+    foreach ($records as $record) {
+        $maacname = trim(fullname((object)[
+            'firstname' => $record->maacfirstname ?? '',
+            'lastname' => $record->maaclastname ?? '',
+        ]));
+        $coursename = format_string($record->coursename);
+        $timestamp = (int)$record->adminsharedtime;
+        $downloaded = !empty($record->admindownloadedtime);
+        $downloadlabel = $downloaded
+            ? get_string('admindownloaded', 'local_spotaward')
+            : get_string('adminnotdownloaded', 'local_spotaward');
+
+        $rows[] = [
+            'selectrecord' => local_spotaward_table_cell(
+                html_writer::checkbox('nominationids[]', (int)$record->id, false, '', [
+                    'class' => 'spotaward-admin-record-checkbox',
+                    'data-admin-record-checkbox' => '1',
+                    'aria-label' => get_string('selectrecordfordownload', 'local_spotaward', (int)$record->id),
+                ]),
+                ['text' => '', 'search' => '', 'sort' => 0, 'filter' => '', 'class' => 'spotaward-table-checkbox']
+            ),
+            'submissiondate' => local_spotaward_table_cell(userdate($timestamp), [
+                'text' => userdate($timestamp),
+                'sort' => $timestamp,
+                'date' => userdate($timestamp, '%Y-%m-%d'),
+            ]),
+            'course' => local_spotaward_table_cell($coursename, ['text' => strip_tags($coursename)]),
+            'maacexecutive' => local_spotaward_table_cell(s($maacname), ['text' => $maacname]),
+            'downloadstatus' => local_spotaward_table_cell(
+                local_spotaward_render_badge($downloadlabel),
+                ['text' => $downloadlabel]
+            ),
+        ];
+    }
+
+    echo html_writer::start_div('spotaward-card');
+    echo html_writer::start_div('spotaward-card-body');
+    if (empty($rows)) {
+        echo html_writer::tag('p', get_string('noadminsharedrecords', 'local_spotaward'), ['class' => 'spotaward-empty']);
+    } else {
+        echo html_writer::start_tag('form', [
+            'id' => $formid,
+            'method' => 'post',
+            'action' => $formurl->out(false),
+        ]);
+        echo html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'sesskey', 'value' => sesskey()]);
+        echo html_writer::start_div('mb-3');
+        echo html_writer::tag('button', get_string('downloadcertificate', 'local_spotaward'), [
+            'type' => 'submit',
+            'name' => 'downloadadmincertificates',
+            'value' => '1',
+            'id' => $buttonid,
+            'class' => 'btn btn-primary',
+            'disabled' => 'disabled',
+        ]);
+        echo html_writer::end_div();
+        echo local_spotaward_render_data_table($columns, $rows, [
+            'id' => 'spotaward-admin-dashboard',
+            'label' => get_string('admindashboard', 'local_spotaward'),
+            'nosearch' => true,
+        ]);
+        echo html_writer::end_tag('form');
+    }
+    echo html_writer::end_div();
+    echo html_writer::end_div();
+    echo html_writer::end_div();
+
+    $PAGE->requires->js_init_code(
+        '(function(){' .
+        'var form=document.getElementById(' . json_encode($formid) . ');' .
+        'if(!form){return;}' .
+        'var master=form.querySelector("[data-admin-select-all=\'1\']");' .
+        'var button=document.getElementById(' . json_encode($buttonid) . ');' .
+        'function getBoxes(){return Array.prototype.slice.call(form.querySelectorAll("input[data-admin-record-checkbox=\'1\']"));}' .
+        'function sync(){var boxes=getBoxes();var checked=boxes.filter(function(box){return box.checked;});if(button){button.disabled=checked.length===0;}if(master){master.checked=boxes.length>0&&checked.length===boxes.length;master.indeterminate=checked.length>0&&checked.length<boxes.length;}}' .
+        'if(master){master.addEventListener("change",function(){getBoxes().forEach(function(box){box.checked=master.checked;});sync();});}' .
+        'form.addEventListener("change",function(e){if(e.target&&e.target.matches("input[data-admin-record-checkbox=\'1\']")){sync();}});' .
+        'form.addEventListener("submit",function(e){if(getBoxes().every(function(box){return !box.checked;})){e.preventDefault();window.alert(' . json_encode(get_string('selectrecordsfordownload', 'local_spotaward')) . ');}});' .
+        'sync();' .
+        '}());'
+    );
 }
 
 if ($view === 'manager' && $ismanager) {

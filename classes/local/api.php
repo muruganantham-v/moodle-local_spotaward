@@ -37,6 +37,9 @@ final class api {
     /** @var array Request-level cache for get_nomination_items(). */
     private static $nominationitemscache = [];
 
+    /** @var string Active certificate compression profile for current render. */
+    private static $certificatecompressionprofile = 'default';
+
     /**
      * Whether user can see plugin entry point.
      *
@@ -45,7 +48,7 @@ final class api {
      */
     public static function user_can_access(int $userid): bool {
         return self::is_nominator($userid) || self::is_program_manager($userid) ||
-            self::is_ss_team($userid) || self::is_manager($userid);
+            self::is_ss_team($userid) || self::is_admin($userid) || self::is_manager($userid);
     }
 
     /**
@@ -76,6 +79,7 @@ final class api {
             constants::nominator_roleid(),
             constants::program_manager_roleid(),
             constants::ss_team_roleid(),
+            constants::admin_roleid(),
             self::get_manager_roleid(),
         ]);
         if (empty($roleids)) {
@@ -208,6 +212,30 @@ final class api {
                 'courselevel' => CONTEXT_COURSE,
             ]
         );
+    }
+
+    /**
+     * Whether user is part of the Admin role.
+     *
+     * @param int $userid
+     * @return bool
+     */
+    public static function is_admin(int $userid): bool {
+        global $DB;
+        static $cache = [];
+        if (isset($cache[$userid])) {
+            return $cache[$userid];
+        }
+
+        if (is_siteadmin($userid)) {
+            return $cache[$userid] = true;
+        }
+
+        return $cache[$userid] = $DB->record_exists('role_assignments', [
+            'userid' => $userid,
+            'roleid' => constants::admin_roleid(),
+            'contextid' => context_system::instance()->id,
+        ]);
     }
 
     /**
@@ -377,6 +405,34 @@ final class api {
     }
 
     /**
+     * Build suggested students for nomination categories in a course.
+     *
+     * @param int $courseid
+     * @param int $userid
+     * @return array
+     */
+    public static function get_nomination_suggestions(int $courseid, int $userid): array {
+        if (!self::can_nominate_in_course($userid, $courseid)) {
+            return [];
+        }
+
+        $course = get_course($courseid);
+        $students = self::get_course_students($courseid, $userid);
+        if (empty($students)) {
+            return [];
+        }
+
+        $suggestions = self::build_nomination_suggestion_map($courseid, $students);
+        $result = [];
+        foreach (constants::award_categories_for_course((string)$course->shortname, (string)$course->fullname) as $category) {
+            $basecategory = constants::base_award_category((string)$category);
+            $result[(string)$category] = array_values(array_map('intval', $suggestions[$basecategory] ?? []));
+        }
+
+        return $result;
+    }
+
+    /**
      * Load program managers for a course.
      *
      * @param int $courseid
@@ -435,6 +491,305 @@ final class api {
             'courselevel' => CONTEXT_COURSE,
             'courseid' => $courseid,
         ]));
+    }
+
+    /**
+     * Build raw suggestion map keyed by base award category.
+     *
+     * @param int $courseid
+     * @param array $students
+     * @return array
+     */
+    private static function build_nomination_suggestion_map(int $courseid, array $students): array {
+        $course = get_course($courseid);
+        $activities = self::get_course_report_activities($course);
+        if (empty($activities)) {
+            return [];
+        }
+
+        $studentids = array_map(static function(stdClass $student): int {
+            return (int)$student->id;
+        }, $students);
+        $grades = self::get_grade_item_grade_map($activities, $studentids);
+
+        $attendancebyuser = [];
+        $moduletestbyuser = [];
+        $quizbyuser = [];
+
+        foreach ($activities as $activity) {
+            foreach ($studentids as $studentid) {
+                $gradevalue = $grades[$activity['gradeitemid']][$studentid] ?? null;
+                $scorepercent = self::get_report_score_percent($activity, $gradevalue);
+                if ($scorepercent === null) {
+                    continue;
+                }
+
+                if ($activity['category'] === 'attendance') {
+                    $attendancebyuser[$studentid][] = $scorepercent;
+                }
+
+                if (self::is_module_test_activity($activity)) {
+                    $moduletestbyuser[$studentid][] = $scorepercent;
+                } else if ($activity['category'] === 'quiz') {
+                    $quizbyuser[$studentid][] = $scorepercent;
+                }
+            }
+        }
+
+        $suggestions = [];
+
+        $perfectattendance = [];
+        $regularattendance = [];
+        foreach ($attendancebyuser as $studentid => $scores) {
+            if (empty($scores)) {
+                continue;
+            }
+
+            $average = array_sum($scores) / count($scores);
+            if ($average >= 100.0) {
+                $perfectattendance[] = $studentid;
+            } else if ($average >= 95.0 && $average < 100.0) {
+                $regularattendance[] = $studentid;
+            }
+        }
+        $suggestions['Perfect Attendance'] = $perfectattendance;
+        $suggestions['Most Regular Student'] = $regularattendance;
+
+        $suggestions['Top Performer - Module Test'] = self::pick_top_students_by_average($moduletestbyuser, 3);
+        $suggestions['Quiz Champion'] = self::pick_highest_scoring_students($quizbyuser);
+
+        $assignmentactivities = array_values(array_filter($activities, static function(array $activity): bool {
+            return $activity['category'] === 'assignments';
+        }));
+        $projectactivities = array_values(array_filter($activities, static function(array $activity): bool {
+            return $activity['category'] === 'projects';
+        }));
+
+        if (count($assignmentactivities) >= 3) {
+            $assignmentranking = self::get_submission_rankings($assignmentactivities, $studentids);
+            $suggestions['Enthusiastic Learner'] = self::pick_lowest_rank_students($assignmentranking, count($assignmentactivities), 3);
+        }
+
+        if (count($projectactivities) > 1) {
+            $projectranking = self::get_submission_rankings($projectactivities, $studentids);
+            $suggestions['Project Enthusiast'] = self::pick_lowest_rank_students($projectranking, count($projectactivities), 3);
+        }
+
+        return $suggestions;
+    }
+
+    /**
+     * Determine whether an activity should be treated as a module test.
+     *
+     * @param array $activity
+     * @return bool
+     */
+    private static function is_module_test_activity(array $activity): bool {
+        $name = \core_text::strtolower(trim((string)($activity['activityname'] ?? '')));
+        return $name !== '' && strpos($name, 'module test') !== false;
+    }
+
+    /**
+     * Pick the highest-average students, limited to a fixed count.
+     *
+     * @param array $scoresbyuser
+     * @param int $limit
+     * @return array
+     */
+    private static function pick_top_students_by_average(array $scoresbyuser, int $limit): array {
+        $averages = [];
+        foreach ($scoresbyuser as $studentid => $scores) {
+            if (empty($scores)) {
+                continue;
+            }
+
+            $averages[] = [
+                'studentid' => (int)$studentid,
+                'average' => array_sum($scores) / count($scores),
+            ];
+        }
+
+        usort($averages, static function(array $left, array $right): int {
+            if ($left['average'] === $right['average']) {
+                return $left['studentid'] <=> $right['studentid'];
+            }
+            return $right['average'] <=> $left['average'];
+        });
+
+        return array_map(static function(array $entry): int {
+            return $entry['studentid'];
+        }, array_slice($averages, 0, $limit));
+    }
+
+    /**
+     * Pick all students tied for the highest average score.
+     *
+     * @param array $scoresbyuser
+     * @return array
+     */
+    private static function pick_highest_scoring_students(array $scoresbyuser): array {
+        $bestscore = null;
+        $studentids = [];
+
+        foreach ($scoresbyuser as $studentid => $scores) {
+            if (empty($scores)) {
+                continue;
+            }
+
+            $average = array_sum($scores) / count($scores);
+            if ($bestscore === null || $average > $bestscore) {
+                $bestscore = $average;
+                $studentids = [(int)$studentid];
+            } else if (abs($average - $bestscore) < 0.00001) {
+                $studentids[] = (int)$studentid;
+            }
+        }
+
+        sort($studentids);
+        return $studentids;
+    }
+
+    /**
+     * Pick students with the lowest average submission rank.
+     *
+     * @param array $ranking
+     * @param int $requiredactivitycount
+     * @param int $limit
+     * @return array
+     */
+    private static function pick_lowest_rank_students(array $ranking, int $requiredactivitycount, int $limit): array {
+        $eligible = [];
+        foreach ($ranking as $studentid => $metrics) {
+            if ((int)($metrics['activitycount'] ?? 0) < $requiredactivitycount) {
+                continue;
+            }
+
+            $eligible[] = [
+                'studentid' => (int)$studentid,
+                'averagerank' => (float)$metrics['averagerank'],
+            ];
+        }
+
+        usort($eligible, static function(array $left, array $right): int {
+            if ($left['averagerank'] === $right['averagerank']) {
+                return $left['studentid'] <=> $right['studentid'];
+            }
+            return $left['averagerank'] <=> $right['averagerank'];
+        });
+
+        return array_map(static function(array $entry): int {
+            return $entry['studentid'];
+        }, array_slice($eligible, 0, $limit));
+    }
+
+    /**
+     * Build submission-rank metrics for activities.
+     *
+     * @param array $activities
+     * @param array $studentids
+     * @return array
+     */
+    private static function get_submission_rankings(array $activities, array $studentids): array {
+        global $DB;
+
+        if (empty($activities) || empty($studentids)) {
+            return [];
+        }
+
+        $submissiontimes = [];
+        $assignids = [];
+        $vplids = [];
+        foreach ($activities as $activity) {
+            if (($activity['module'] ?? '') === 'assign') {
+                $assignids[] = (int)$activity['iteminstance'];
+            } else if (($activity['module'] ?? '') === 'vpl') {
+                $vplids[] = (int)$activity['iteminstance'];
+            }
+        }
+
+        if (!empty($assignids) &&
+                self::table_has_field('assign_submission', 'assignment') &&
+                self::table_has_field('assign_submission', 'userid') &&
+                self::table_has_field('assign_submission', 'timemodified')) {
+            [$assignsql, $assignparams] = $DB->get_in_or_equal($assignids, SQL_PARAMS_NAMED, 'asg');
+            [$usersql, $userparams] = $DB->get_in_or_equal($studentids, SQL_PARAMS_NAMED, 'asu');
+            $statusfilter = '';
+            $params = $assignparams + $userparams;
+            if (self::table_has_field('assign_submission', 'status')) {
+                $statusfilter = ' AND asub.status = :submittedstatus';
+                $params['submittedstatus'] = 'submitted';
+            }
+
+            $sql = "SELECT asub.assignment AS activityid, asub.userid, MIN(asub.timemodified) AS submittedat
+                      FROM {assign_submission} asub
+                     WHERE asub.assignment $assignsql
+                       AND asub.userid $usersql
+                       $statusfilter
+                  GROUP BY asub.assignment, asub.userid";
+            $records = $DB->get_records_sql($sql, $params);
+            foreach ($records as $record) {
+                if (empty($record->submittedat)) {
+                    continue;
+                }
+                $submissiontimes[(int)$record->activityid][(int)$record->userid] = (int)$record->submittedat;
+            }
+        }
+
+        if (!empty($vplids) &&
+                self::table_has_field('vpl_submissions', 'vpl') &&
+                self::table_has_field('vpl_submissions', 'userid') &&
+                self::table_has_field('vpl_submissions', 'datesubmitted')) {
+            [$vplsql, $vplparams] = $DB->get_in_or_equal($vplids, SQL_PARAMS_NAMED, 'vpl');
+            [$usersql, $userparams] = $DB->get_in_or_equal($studentids, SQL_PARAMS_NAMED, 'vsu');
+            $sql = "SELECT vs.vpl AS activityid, vs.userid, MIN(vs.datesubmitted) AS submittedat
+                      FROM {vpl_submissions} vs
+                     WHERE vs.vpl $vplsql
+                       AND vs.userid $usersql
+                       AND vs.datesubmitted > 0
+                  GROUP BY vs.vpl, vs.userid";
+            $records = $DB->get_records_sql($sql, $vplparams + $userparams);
+            foreach ($records as $record) {
+                if (empty($record->submittedat)) {
+                    continue;
+                }
+                $submissiontimes[(int)$record->activityid][(int)$record->userid] = (int)$record->submittedat;
+            }
+        }
+
+        $ranking = [];
+        foreach ($submissiontimes as $activityid => $timesbyuser) {
+            asort($timesbyuser, SORT_NUMERIC);
+            $rank = 0;
+            $position = 0;
+            $lasttime = null;
+
+            foreach ($timesbyuser as $studentid => $submittedat) {
+                $position++;
+                if ($lasttime === null || $submittedat !== $lasttime) {
+                    $rank = $position;
+                    $lasttime = $submittedat;
+                }
+
+                if (!isset($ranking[$studentid])) {
+                    $ranking[$studentid] = [
+                        'ranktotal' => 0.0,
+                        'activitycount' => 0,
+                        'averagerank' => 0.0,
+                    ];
+                }
+
+                $ranking[$studentid]['ranktotal'] += $rank;
+                $ranking[$studentid]['activitycount']++;
+            }
+        }
+
+        foreach ($ranking as $studentid => $metrics) {
+            if ($metrics['activitycount'] > 0) {
+                $ranking[$studentid]['averagerank'] = $metrics['ranktotal'] / $metrics['activitycount'];
+            }
+        }
+
+        return $ranking;
     }
 
     /**
@@ -909,6 +1264,36 @@ final class api {
     }
 
     /**
+     * Get active Admin users from the configured Admin role.
+     *
+     * @return array
+     */
+    private static function get_admin_users(): array {
+        global $DB;
+
+        $roleid = constants::admin_roleid();
+        if ($roleid <= 0) {
+            return [];
+        }
+
+        $systemcontextid = context_system::instance()->id;
+        $sql = "SELECT DISTINCT u.id, u.firstname, u.lastname, u.email
+                  FROM {user} u
+                  JOIN {role_assignments} ra ON ra.userid = u.id
+                 WHERE u.deleted = 0
+                   AND u.suspended = 0
+                   AND u.email <> ''
+                   AND ra.roleid = :roleid
+                   AND ra.contextid = :contextid
+              ORDER BY u.firstname ASC, u.lastname ASC";
+
+        return array_values($DB->get_records_sql($sql, [
+            'roleid' => $roleid,
+            'contextid' => $systemcontextid,
+        ]));
+    }
+
+    /**
      * Get active SS Team users from the configured SS Team role.
      *
      * @return array
@@ -962,7 +1347,7 @@ final class api {
             throw new moodle_exception('invalidparameter');
         }
 
-        $recipients = self::get_configured_users('admin_team_members');
+        $recipients = self::get_admin_users();
         if (empty($recipients)) {
             throw new moodle_exception('noadminconfigured', 'local_spotaward');
         }
@@ -983,10 +1368,22 @@ final class api {
 
         try {
             if ($attachcertificates) {
-                $certificatepdf = self::build_combined_certificate_pdf_attachment($nominationid);
-                $temporaryfiles[] = $certificatepdf['path'];
+                try {
+                    $certificatepdf = self::build_combined_certificate_pdf_attachment($nominationid);
+                    $temporaryfiles[] = $certificatepdf['path'];
 
-                $attachment = self::build_admin_documents_bundle($nominationid, $filepath, $filename, $certificatepdf);
+                    $attachment = self::build_admin_documents_bundle($nominationid, $filepath, $filename, $certificatepdf);
+                } catch (moodle_exception $e) {
+                    if ($e->errorcode !== 'adminsharecertificatetoolarge') {
+                        throw $e;
+                    }
+
+                    $attachment = self::build_admin_documents_bundle_with_compact_certificates(
+                        $nominationid,
+                        $filepath,
+                        $filename
+                    );
+                }
                 $temporaryfiles[] = $attachment['path'];
             }
 
@@ -1005,6 +1402,8 @@ final class api {
                 'id' => $nominationid,
                 'adminsharedtime' => time(),
                 'adminsharedby' => $actorid,
+                'admindownloadedtime' => 0,
+                'admindownloadedby' => 0,
                 'timemodified' => time(),
             ]);
         } finally {
@@ -1845,7 +2244,8 @@ final class api {
                         }
                     }
 
-                    return "url('" . $tempFile . "')";
+                    $optimizedpath = self::optimize_certificate_image_for_pdf($tempFile);
+                    return "url('" . $optimizedpath . "')";
                     
                 } catch (\Exception $e) {
                     debugging('Base64 image decode error: ' . $e->getMessage());
@@ -1873,7 +2273,8 @@ final class api {
 
                 $resolved = self::resolve_certificate_asset_url_to_file($url);
                 if (!empty($resolved) && is_file($resolved)) {
-                    return "url('" . $resolved . "')";
+                    $optimizedpath = self::optimize_certificate_image_for_pdf($resolved);
+                    return "url('" . $optimizedpath . "')";
                 }
                 
                 // Handle external URLs
@@ -1969,7 +2370,8 @@ final class api {
                             }
                             $resolved = self::resolve_certificate_asset_url_to_file($url);
                             if (!empty($resolved) && is_file($resolved)) {
-                                return "url('" . $resolved . "')";
+                                $optimizedpath = self::optimize_certificate_image_for_pdf($resolved);
+                                return "url('" . $optimizedpath . "')";
                             }
                             return $um[0];
                         },
@@ -2105,6 +2507,111 @@ final class api {
         }
 
         return null;
+    }
+
+    /**
+     * Create a smaller cached image copy for certificate PDF generation.
+     *
+     * This keeps the same dimensions and favors quality, but re-encodes large
+     * source images so merged certificate PDFs stay smaller without external tools.
+     *
+     * @param string $sourcepath
+     * @return string
+     */
+    private static function optimize_certificate_image_for_pdf(string $sourcepath): string {
+        global $CFG;
+
+        if (!function_exists('imagecreatefromstring') || !is_file($sourcepath)) {
+            return $sourcepath;
+        }
+
+        $info = @getimagesize($sourcepath);
+        if (empty($info['mime']) || strpos((string)$info['mime'], 'image/') !== 0) {
+            return $sourcepath;
+        }
+
+        $mime = strtolower((string)$info['mime']);
+        $supported = [
+            'image/jpeg',
+            'image/png',
+            'image/gif',
+            'image/webp',
+        ];
+        if (!in_array($mime, $supported, true)) {
+            return $sourcepath;
+        }
+
+        $imagesettings = self::get_certificate_image_optimization_settings(self::$certificatecompressionprofile);
+        $quality = $imagesettings['quality'];
+        $maxlongedge = $imagesettings['maxlongedge'];
+        $tempdir = make_temp_directory('spotaward_cert_images_opt');
+        $hash = @md5_file($sourcepath);
+        if (empty($hash)) {
+            return $sourcepath;
+        }
+
+        $targetpath = $tempdir . '/img_' . $hash . '_v3_' . self::$certificatecompressionprofile .
+            '_q' . $quality . '_max' . $maxlongedge . '.jpg';
+        if (is_file($targetpath) && (@filesize($targetpath) ?: 0) > 0) {
+            return $targetpath;
+        }
+
+        $data = @file_get_contents($sourcepath);
+        if ($data === false || $data === '') {
+            return $sourcepath;
+        }
+
+        $image = @imagecreatefromstring($data);
+        if (!$image) {
+            return $sourcepath;
+        }
+
+        $width = imagesx($image);
+        $height = imagesy($image);
+        if ($width <= 0 || $height <= 0) {
+            imagedestroy($image);
+            return $sourcepath;
+        }
+
+        $targetwidth = $width;
+        $targetheight = $height;
+        $longedge = max($width, $height);
+        if ($longedge > $maxlongedge) {
+            $scale = $maxlongedge / $longedge;
+            $targetwidth = max(1, (int)round($width * $scale));
+            $targetheight = max(1, (int)round($height * $scale));
+        }
+
+        $canvas = imagecreatetruecolor($targetwidth, $targetheight);
+        if (!$canvas) {
+            imagedestroy($image);
+            return $sourcepath;
+        }
+
+        $white = imagecolorallocate($canvas, 255, 255, 255);
+        imagefilledrectangle($canvas, 0, 0, $targetwidth, $targetheight, $white);
+        imagecopyresampled($canvas, $image, 0, 0, 0, 0, $targetwidth, $targetheight, $width, $height);
+        imageinterlace($canvas, true);
+
+        $saved = @imagejpeg($canvas, $targetpath, $quality);
+        imagedestroy($canvas);
+        imagedestroy($image);
+
+        if (!$saved || !is_file($targetpath) || (@filesize($targetpath) ?: 0) <= 0) {
+            if (is_file($targetpath)) {
+                @unlink($targetpath);
+            }
+            return $sourcepath;
+        }
+
+        $originalsize = @filesize($sourcepath) ?: 0;
+        $optimizedsize = @filesize($targetpath) ?: 0;
+        if ($originalsize > 0 && $optimizedsize >= $originalsize) {
+            @unlink($targetpath);
+            return $sourcepath;
+        }
+
+        return $targetpath;
     }
 
     /**
@@ -2288,7 +2795,8 @@ final class api {
 
                         $resolved = self::resolve_certificate_asset_url_to_file($url);
                         if (!empty($resolved) && is_file($resolved)) {
-                            return 'url(\'' . $resolved . '\')';
+                            $optimizedpath = self::optimize_certificate_image_for_pdf($resolved);
+                            return 'url(\'' . $optimizedpath . '\')';
                         }
                         
                         // Already an absolute filesystem path
@@ -2380,7 +2888,8 @@ final class api {
         if (!empty($backgroundurl)) {
             $backgroundpath = self::resolve_certificate_asset_url_to_file($backgroundurl);
             if (!empty($backgroundpath) && is_file($backgroundpath)) {
-                $backgroundhtml = '<img class="spotaward-cert-bg-fixed" src="' . s($backgroundpath) . '" alt="" />';
+                $optimizedpath = self::optimize_certificate_image_for_pdf($backgroundpath);
+                $backgroundhtml = '<img class="spotaward-cert-bg-fixed" src="' . s($optimizedpath) . '" alt="" />';
             }
         }
 
@@ -2477,7 +2986,7 @@ final class api {
         }
 
         $resolved = self::resolve_certificate_asset_url_to_file($image);
-        $source = !empty($resolved) && is_file($resolved) ? $resolved : $image;
+        $source = !empty($resolved) && is_file($resolved) ? self::optimize_certificate_image_for_pdf($resolved) : $image;
 
         $mpdf->Image(
             $source,
@@ -2513,10 +3022,6 @@ final class api {
             return '';
         }
 
-        if (count($pdfcontents) === 1) {
-            return $pdfcontents[0];
-        }
-
         require_once(__DIR__ . '/../../../../lib/tcpdf/tcpdf.php');
         require_once(__DIR__ . '/../../../../mod/certificatebeautiful/classes/pdf/vendor/autoload.php');
 
@@ -2530,6 +3035,7 @@ final class api {
             $pdf->setPrintFooter(false);
             $pdf->SetMargins(0, 0, 0);
             $pdf->SetAutoPageBreak(false, 0);
+            $pdf->SetCompression(true);
 
             foreach ($pdfcontents as $index => $content) {
                 $temppath = $tempdir . '/cert_' . $index . '.pdf';
@@ -2548,6 +3054,10 @@ final class api {
             }
 
             $merged = $pdf->Output($outputfilename, 'S');
+            $optimized = self::optimize_pdf_with_ghostscript($merged, $outputfilename);
+            if ($optimized !== '') {
+                $merged = $optimized;
+            }
         } finally {
             foreach ($tempfiles as $temppath) {
                 if (is_file($temppath)) {
@@ -2557,6 +3067,163 @@ final class api {
         }
 
         return $merged;
+    }
+
+    /**
+     * Optimize a merged PDF with Ghostscript when available.
+     *
+     * This keeps the existing merge path intact and only applies a second
+     * optimization pass when a supported Ghostscript binary is present.
+     *
+     * @param string $pdfcontent
+     * @param string $outputfilename
+     * @return string
+     */
+    private static function optimize_pdf_with_ghostscript(string $pdfcontent, string $outputfilename): string {
+        global $CFG;
+
+        $binary = self::find_ghostscript_binary();
+        if ($binary === '') {
+            return '';
+        }
+
+        check_dir_exists($CFG->tempdir . '/spotaward_gs_optimize');
+        $tempdir = make_temp_directory('spotaward_gs_optimize');
+        $inputpath = tempnam($tempdir, 'spotawardin');
+        $outputpath = tempnam($tempdir, 'spotawardout');
+        if ($inputpath === false || $outputpath === false) {
+            if ($inputpath && is_file($inputpath)) {
+                @unlink($inputpath);
+            }
+            if ($outputpath && is_file($outputpath)) {
+                @unlink($outputpath);
+            }
+            return '';
+        }
+
+        $pdfinput = $inputpath . '.pdf';
+        $pdfoutput = $outputpath . '.pdf';
+        @rename($inputpath, $pdfinput);
+        @rename($outputpath, $pdfoutput);
+
+        try {
+            if (file_put_contents($pdfinput, $pdfcontent) === false) {
+                return '';
+            }
+
+            $cmd = escapeshellarg($binary) .
+                ' -sDEVICE=pdfwrite' .
+                ' -dCompatibilityLevel=1.4' .
+                ' -dNOPAUSE -dBATCH -dSAFER -dQUIET' .
+                ' -dDetectDuplicateImages=true' .
+                ' -dCompressFonts=true' .
+                ' -dSubsetFonts=true' .
+                ' -dAutoFilterColorImages=false' .
+                ' -dAutoFilterGrayImages=false' .
+                ' -dColorImageFilter=/DCTEncode' .
+                ' -dGrayImageFilter=/DCTEncode' .
+                ' -dJPEGQ=85' .
+                ' -dDownsampleColorImages=false' .
+                ' -dDownsampleGrayImages=false' .
+                ' -dDownsampleMonoImages=false' .
+                ' -sOutputFile=' . escapeshellarg($pdfoutput) . ' ' .
+                escapeshellarg($pdfinput);
+
+            $exitcode = self::run_pdf_optimization_command($cmd);
+            if ($exitcode !== 0 || !is_file($pdfoutput)) {
+                return '';
+            }
+
+            $optimized = file_get_contents($pdfoutput);
+            if ($optimized === false || $optimized === '') {
+                return '';
+            }
+
+            return strlen($optimized) <= strlen($pdfcontent) ? $optimized : $pdfcontent;
+        } finally {
+            if (is_file($pdfinput)) {
+                @unlink($pdfinput);
+            }
+            if (is_file($pdfoutput)) {
+                @unlink($pdfoutput);
+            }
+        }
+    }
+
+    /**
+     * Locate a Ghostscript binary if available on the host.
+     *
+     * @return string
+     */
+    private static function find_ghostscript_binary(): string {
+        $candidates = [
+            'gswin64c',
+            'gswin32c',
+            'gs',
+            'C:\\Program Files\\gs\\gs10.05.1\\bin\\gswin64c.exe',
+            'C:\\Program Files\\gs\\gs10.04.0\\bin\\gswin64c.exe',
+            'C:\\Program Files\\gs\\gs10.03.1\\bin\\gswin64c.exe',
+            'C:\\Program Files\\gs\\gs10.03.0\\bin\\gswin64c.exe',
+            'C:\\Program Files\\gs\\gs10.02.1\\bin\\gswin64c.exe',
+            'C:\\Program Files\\gs\\gs10.02.0\\bin\\gswin64c.exe',
+        ];
+
+        foreach ($candidates as $candidate) {
+            if (preg_match('/^[A-Za-z]:\\\\/', $candidate) && is_file($candidate)) {
+                return $candidate;
+            }
+
+            $resolved = self::resolve_command_path($candidate);
+            if ($resolved !== '') {
+                return $resolved;
+            }
+        }
+
+        return '';
+    }
+
+    /**
+     * Resolve a command name to an executable path.
+     *
+     * @param string $command
+     * @return string
+     */
+    private static function resolve_command_path(string $command): string {
+        if (!function_exists('exec')) {
+            return '';
+        }
+
+        $checker = strtoupper(substr(PHP_OS, 0, 3)) === 'WIN' ? 'where' : 'command -v';
+        $output = [];
+        $exitcode = 1;
+        @exec($checker . ' ' . escapeshellarg($command), $output, $exitcode);
+        if ($exitcode !== 0 || empty($output[0])) {
+            return '';
+        }
+
+        return trim((string)$output[0]);
+    }
+
+    /**
+     * Execute a PDF optimization shell command.
+     *
+     * @param string $cmd
+     * @return int
+     */
+    private static function run_pdf_optimization_command(string $cmd): int {
+        if (function_exists('exec')) {
+            $output = [];
+            $exitcode = 1;
+            @exec($cmd, $output, $exitcode);
+            return (int)$exitcode;
+        }
+
+        if (function_exists('shell_exec')) {
+            @shell_exec($cmd);
+            return 0;
+        }
+
+        return 1;
     }
 
     /**
@@ -2694,8 +3361,8 @@ final class api {
      * @param stdClass $item
      * @return string
      */
-    public static function generate_certificate_using_bc(stdClass $model, stdClass $user, stdClass $course, 
-                                                          stdClass $nomination, stdClass $item): string {
+    public static function generate_certificate_using_bc(stdClass $model, stdClass $user, stdClass $course,
+            stdClass $nomination, stdClass $item, string $compressionprofile = 'default'): string {
         $nominator = core_user::get_user($nomination->nominatorid);
         $programmanager = core_user::get_user($nomination->programmanagerid);
         $replacements = cert_field_map::get_replacement_fields($course, $user, $nomination, $item, $nominator, $programmanager);
@@ -2704,7 +3371,8 @@ final class api {
             $model,
             $replacements,
             'Spot Award Certificate',
-            'Spot Award Certificate'
+            'Spot Award Certificate',
+            $compressionprofile
         );
     }
 
@@ -2781,7 +3449,7 @@ final class api {
      * @return string
      */
     private static function generate_document_using_bc(stdClass $model, array $replacements, string $creator,
-            string $title): string {
+            string $title, string $compressionprofile = 'default'): string {
         global $CFG;
 
         require_once(__DIR__ . '/../../../../mod/certificatebeautiful/classes/pdf/vendor/autoload.php');
@@ -2790,81 +3458,90 @@ final class api {
         $proporcao = .85;
         $orientation = isset($model->orientation) ? $model->orientation : 'L';
 
-        $mpdf = new \Mpdf\Mpdf(self::get_certificate_mpdf_config([210 * $proporcao, 297 * $proporcao], $orientation));
+        $previousprofile = self::$certificatecompressionprofile;
+        self::$certificatecompressionprofile = $compressionprofile;
+
+        $mpdf = new \Mpdf\Mpdf(self::get_certificate_mpdf_config(
+            [210 * $proporcao, 297 * $proporcao],
+            $orientation,
+            $compressionprofile
+        ));
         $mpdf->autoPageBreak = false;
+        $mpdf->SetCompression(true);
 
         $mpdf->SetAuthor($title);
         $mpdf->SetCreator($creator);
         $mpdf->SetTitle($title);
 
-        foreach ($model->pages_info_object as $page) {
-            $mpdf->AddPageByArray([]);
+        try {
+            foreach ($model->pages_info_object as $page) {
+                $mpdf->AddPageByArray([]);
 
-            $htmldata = $page->htmldata ?? '';
-            $cssdata = $page->cssdata ?? '';
+                $htmldata = $page->htmldata ?? '';
+                $cssdata = $page->cssdata ?? '';
 
             // IMPORTANT: Decode HTML entities first - Beautiful Certificate may store them encoded
-            $htmldata = html_entity_decode($htmldata, ENT_QUOTES | ENT_HTML5, 'UTF-8');
-            $cssdata = html_entity_decode($cssdata, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+                $htmldata = html_entity_decode($htmldata, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+                $cssdata = html_entity_decode($cssdata, ENT_QUOTES | ENT_HTML5, 'UTF-8');
 
             // Match Beautiful Certificate's own PDF renderer behavior.
-            $htmldata = str_replace("<section", "<body", $htmldata);
-            $htmldata = str_replace("</section>", "</body>", $htmldata);
+                $htmldata = str_replace("<section", "<body", $htmldata);
+                $htmldata = str_replace("</section>", "</body>", $htmldata);
 
             // Add Beautiful Certificate system fields - use UPPERCASE (case sensitive!)
-            $replacements['{$CERTIFICATE->description}'] = $model->description ?? '';
-            $replacements['{$CERTIFICATE->name}'] = $model->name ?? '';
-            $replacements['{$CERTIFICATE->id}'] = $model->id ?? '';
+                $replacements['{$CERTIFICATE->description}'] = $model->description ?? '';
+                $replacements['{$CERTIFICATE->name}'] = $model->name ?? '';
+                $replacements['{$CERTIFICATE->id}'] = $model->id ?? '';
             
             // Also add lowercase versions in case template uses them
-            $replacements['{$certificate->description}'] = $model->description ?? '';
-            $replacements['{$certificate->name}'] = $model->name ?? '';
-            $replacements['{$certificate->id}'] = $model->id ?? '';
+                $replacements['{$certificate->description}'] = $model->description ?? '';
+                $replacements['{$certificate->name}'] = $model->name ?? '';
+                $replacements['{$certificate->id}'] = $model->id ?? '';
 
             // Apply all field replacements to HTML
-            foreach ($replacements as $placeholder => $value) {
-                if (!empty($value) || $value === '0') {  // Allow '0' as valid value
-                    $wrappedvalue = self::is_plain_text_certificate_placeholder($placeholder)
-                        ? self::wrap_certificate_plaintext_value((string)$value)
-                        : self::wrap_certificate_replacement_value((string)$value);
-                    $htmldata = str_replace($placeholder, $wrappedvalue, $htmldata);
-                }
-            }
-
-            // Apply field replacements to CSS
-            if (!empty($cssdata)) {
                 foreach ($replacements as $placeholder => $value) {
-                    if (!empty($value) || $value === '0') {  // Allow '0' as valid value
-                        $cssdata = str_replace($placeholder, (string)$value, $cssdata);
+                    if (!empty($value) || $value === '0') {
+                        $wrappedvalue = self::is_plain_text_certificate_placeholder($placeholder)
+                            ? self::wrap_certificate_plaintext_value((string)$value)
+                            : self::wrap_certificate_replacement_value((string)$value);
+                        $htmldata = str_replace($placeholder, $wrappedvalue, $htmldata);
                     }
                 }
-            }
+
+            // Apply field replacements to CSS
+                if (!empty($cssdata)) {
+                    foreach ($replacements as $placeholder => $value) {
+                        if (!empty($value) || $value === '0') {
+                            $cssdata = str_replace($placeholder, (string)$value, $cssdata);
+                        }
+                    }
+                }
 
             // Process CSS for mPDF-compatible image URLs BEFORE language string processing
             // This includes expanding background shorthand and resolving URLs
-            $cssdata = self::process_certificate_css($cssdata);
+                $cssdata = self::process_certificate_css($cssdata);
 
             // Process Beautiful Certificate language strings {#s}key{/s}
             // This must happen AFTER field replacements to avoid interfering with them
-            $htmldata = self::process_language_strings($htmldata);
-            if (!empty($cssdata)) {
-                $cssdata = self::process_language_strings($cssdata);
-            }
+                $htmldata = self::process_language_strings($htmldata);
+                if (!empty($cssdata)) {
+                    $cssdata = self::process_language_strings($cssdata);
+                }
 
             // Process date functions {{userdate(...)}}
-            $htmldata = self::process_date_functions($htmldata);
-            if (!empty($cssdata)) {
-                $cssdata = self::process_date_functions($cssdata);
-            }
+                $htmldata = self::process_date_functions($htmldata);
+                if (!empty($cssdata)) {
+                    $cssdata = self::process_date_functions($cssdata);
+                }
 
             // Clean up HTML
-            $htmldata = self::process_certificate_html($htmldata);
-            $cssdata = self::process_certificate_html($cssdata);
+                $htmldata = self::process_certificate_html($htmldata);
+                $cssdata = self::process_certificate_html($cssdata);
             
             // Process inline background-image styles in HTML elements
-            $htmldata = self::process_inline_background_images($htmldata);
+                $htmldata = self::process_inline_background_images($htmldata);
 
-            $extracss = "
+                $extracss = "
                 @page {
                     page-break-inside: avoid;
                 }
@@ -2876,23 +3553,26 @@ final class api {
                 }";
 
             // Combine CSS properly
-            $fullcss = $extracss;
-            if (!empty($cssdata)) {
-                $fullcss .= "\n" . $cssdata;
-            }
+                $fullcss = $extracss;
+                if (!empty($cssdata)) {
+                    $fullcss .= "\n" . $cssdata;
+                }
 
-            if (empty($htmldata)) {
-                continue;
-            }
+                if (empty($htmldata)) {
+                    continue;
+                }
 
-            self::apply_certificate_background($htmldata, $cssdata, $mpdf);
+                self::apply_certificate_background($htmldata, $cssdata, $mpdf);
 
-            if (!empty($cssdata)) {
-                $mpdf->WriteHTML($fullcss, \Mpdf\HTMLParserMode::HEADER_CSS);
-                $mpdf->WriteHTML($htmldata);
-            } else {
-                $mpdf->WriteHTML("<style>{$extracss}</style>\n{$htmldata}");
+                if (!empty($cssdata)) {
+                    $mpdf->WriteHTML($fullcss, \Mpdf\HTMLParserMode::HEADER_CSS);
+                    $mpdf->WriteHTML($htmldata);
+                } else {
+                    $mpdf->WriteHTML("<style>{$extracss}</style>\n{$htmldata}");
+                }
             }
+        } finally {
+            self::$certificatecompressionprofile = $previousprofile;
         }
 
         return $mpdf->Output('certificate.pdf', \Mpdf\Output\Destination::STRING_RETURN);
@@ -2905,7 +3585,8 @@ final class api {
      * @param string $orientation
      * @return array
      */
-    private static function get_certificate_mpdf_config($format, string $orientation = 'L'): array {
+    private static function get_certificate_mpdf_config($format, string $orientation = 'L',
+            string $compressionprofile = 'default'): array {
         global $CFG;
 
         $fontdirs = (new \Mpdf\Config\ConfigVariables())->getDefaults()['fontDir'];
@@ -2939,11 +3620,16 @@ final class api {
             $defaultfont = 'arial';
         }
 
+        $imagesettings = self::get_certificate_image_optimization_settings($compressionprofile);
+
         return [
             'mode' => 'utf-8',
             'format' => $format,
             'orientation' => $orientation,
             'tempDir' => "{$CFG->dataroot}/temp/mpdf",
+            'dpi' => $imagesettings['dpi'],
+            'img_dpi' => $imagesettings['imgdpi'],
+            'jpeg_quality' => $imagesettings['pdfjpegquality'],
             'margin_left' => 0,
             'margin_right' => 0,
             'margin_top' => 0,
@@ -3221,6 +3907,7 @@ final class api {
      * @return void
      */
     public static function download_certificate(int $nominationid, int $userid, int $nominationitemid = 0): void {
+        self::ensure_nomination_certificates_generated($nominationid);
         $file = self::get_certificate_file($nominationid, $userid, $nominationitemid);
         
         if (!$file) {
@@ -3262,6 +3949,16 @@ final class api {
         }
 
         if (strlen($mergedpdf) > self::ADMIN_SHARE_MAX_BYTES) {
+            $compactpdfcontents = self::generate_nomination_certificate_pdf_contents($nominationid, 'adminshare');
+            if (!empty($compactpdfcontents)) {
+                $compactmergedpdf = self::merge_pdf_documents($compactpdfcontents, $basename . '_certificates.pdf');
+                if ($compactmergedpdf !== '' && strlen($compactmergedpdf) < strlen($mergedpdf)) {
+                    $mergedpdf = $compactmergedpdf;
+                }
+            }
+        }
+
+        if (strlen($mergedpdf) > self::ADMIN_SHARE_MAX_BYTES) {
             throw new moodle_exception('adminsharecertificatetoolarge', 'local_spotaward');
         }
 
@@ -3276,6 +3973,85 @@ final class api {
             'path' => $tmppdf,
             'name' => $basename . '_certificates.pdf',
             'content' => $mergedpdf,
+        ];
+    }
+
+    /**
+     * Generate nomination certificate PDFs in-memory with a specific compression profile.
+     *
+     * This is used for admin-share fallbacks so we can keep emailed bundles below
+     * the attachment threshold without replacing the normal stored certificates.
+     *
+     * @param int $nominationid
+     * @param string $compressionprofile
+     * @return array
+     */
+    private static function generate_nomination_certificate_pdf_contents(int $nominationid,
+            string $compressionprofile = 'default'): array {
+        $nomination = self::get_nomination($nominationid);
+        if (!in_array($nomination->status, ['ssteamprogress', 'closed'], true)) {
+            throw new moodle_exception('invalidparameter');
+        }
+
+        $templateid = (int)get_config('local_spotaward', 'certificate_templateid');
+        $model = self::get_beautiful_certificate_model($templateid);
+        $course = get_course($nomination->courseid);
+        $items = self::get_nomination_items($nominationid);
+        $generated = [];
+
+        foreach ($items as $item) {
+            if (!in_array($item->status, ['ssteamprogress', 'closed'], true)) {
+                continue;
+            }
+
+            $student = core_user::get_user($item->studentid);
+            if (!$student) {
+                continue;
+            }
+
+            try {
+                $generated[] = self::generate_certificate_using_bc(
+                    $model,
+                    $student,
+                    $course,
+                    $nomination,
+                    $item,
+                    $compressionprofile
+                );
+            } catch (\Throwable $e) {
+                debugging('Certificate generation failed for compact admin share item ' .
+                    $item->id . ': ' . $e->getMessage(), DEBUG_DEVELOPER);
+            }
+        }
+
+        return array_values(array_filter($generated, static function($content) {
+            return is_string($content) && $content !== '';
+        }));
+    }
+
+    /**
+     * Get image optimization settings for the active certificate profile.
+     *
+     * @param string $compressionprofile
+     * @return array
+     */
+    private static function get_certificate_image_optimization_settings(string $compressionprofile = 'default'): array {
+        if ($compressionprofile === 'adminshare') {
+            return [
+                'quality' => 64,
+                'maxlongedge' => 1280,
+                'dpi' => 60,
+                'imgdpi' => 60,
+                'pdfjpegquality' => 42,
+            ];
+        }
+
+        return [
+            'quality' => 78,
+            'maxlongedge' => 1800,
+            'dpi' => 72,
+            'imgdpi' => 72,
+            'pdfjpegquality' => 55,
         ];
     }
 
@@ -3381,6 +4157,115 @@ final class api {
     }
 
     /**
+     * Build admin attachment ZIP containing the uploaded PR and compact individual certificates.
+     *
+     * This is a fallback for Share to Admin when the merged certificates PDF is still
+     * above the attachment limit. It keeps the share flow working without changing the
+     * normal dashboard merged-download behavior.
+     *
+     * @param int $nominationid
+     * @param string $prpath
+     * @param string $prfilename
+     * @return array
+     */
+    private static function build_admin_documents_bundle_with_compact_certificates(int $nominationid,
+            string $prpath, string $prfilename): array {
+        global $CFG;
+
+        $prcontent = file_get_contents($prpath);
+        if ($prcontent === false) {
+            throw new moodle_exception('invalidparameter');
+        }
+
+        if (strlen($prcontent) > self::ADMIN_SHARE_MAX_BYTES) {
+            throw new moodle_exception('adminshareattachmenttoolarge', 'local_spotaward');
+        }
+
+        $compactcertificates = self::generate_nomination_certificate_file_map($nominationid, 'adminshare');
+        if (empty($compactcertificates)) {
+            throw new moodle_exception('nocertificates', 'local_spotaward');
+        }
+
+        require_once(__DIR__ . '/../../../../lib/filestorage/zip_packer.php');
+
+        check_dir_exists($CFG->tempdir . '/zip');
+        $tmpzip = tempnam($CFG->tempdir . '/zip', 'spotawardadmin');
+        if ($tmpzip === false) {
+            throw new moodle_exception('generalexceptionmessage', 'error', '', 'Unable to create ZIP archive.');
+        }
+
+        $zipfiles = [
+            'pr_document/' . clean_filename($prfilename) => [$prcontent],
+        ];
+        foreach ($compactcertificates as $certfilename => $certcontent) {
+            $zipfiles['certificates/' . clean_filename($certfilename)] = [$certcontent];
+        }
+
+        $zipper = new \zip_packer();
+        $result = $zipper->archive_to_pathname($zipfiles, $tmpzip);
+        if (!$result || !is_file($tmpzip)) {
+            @unlink($tmpzip);
+            throw new moodle_exception('generalexceptionmessage', 'error', '', 'Unable to create ZIP archive.');
+        }
+
+        return [
+            'path' => $tmpzip,
+            'name' => self::get_certificate_zip_basename($nominationid) . '_admin_documents.zip',
+        ];
+    }
+
+    /**
+     * Generate certificate filenames mapped to PDF contents for a nomination.
+     *
+     * @param int $nominationid
+     * @param string $compressionprofile
+     * @return array
+     */
+    private static function generate_nomination_certificate_file_map(int $nominationid,
+            string $compressionprofile = 'default'): array {
+        $nomination = self::get_nomination($nominationid);
+        if (!in_array($nomination->status, ['ssteamprogress', 'closed'], true)) {
+            throw new moodle_exception('invalidparameter');
+        }
+
+        $templateid = (int)get_config('local_spotaward', 'certificate_templateid');
+        $model = self::get_beautiful_certificate_model($templateid);
+        $course = get_course($nomination->courseid);
+        $items = self::get_nomination_items($nominationid);
+        $generated = [];
+
+        foreach ($items as $item) {
+            if (!in_array($item->status, ['ssteamprogress', 'closed'], true)) {
+                continue;
+            }
+
+            $student = core_user::get_user($item->studentid);
+            if (!$student) {
+                continue;
+            }
+
+            try {
+                $generated[self::get_certificate_filename((int)$item->id, (int)$student->id)] =
+                    self::generate_certificate_using_bc(
+                        $model,
+                        $student,
+                        $course,
+                        $nomination,
+                        $item,
+                        $compressionprofile
+                    );
+            } catch (\Throwable $e) {
+                debugging('Certificate generation failed for compact admin certificate file ' .
+                    $item->id . ': ' . $e->getMessage(), DEBUG_DEVELOPER);
+            }
+        }
+
+        return array_filter($generated, static function($content) {
+            return is_string($content) && $content !== '';
+        });
+    }
+
+    /**
      * Download all certificates as ZIP.
      *
      * @param int $nominationid
@@ -3395,6 +4280,66 @@ final class api {
 
         echo $certificatezip['content'];
         @unlink($certificatezip['path']);
+        exit;
+    }
+
+    /**
+     * Download certificates for multiple Admin-shared records as one merged PDF.
+     *
+     * @param array $nominationids
+     * @param int $userid
+     * @return void
+     */
+    public static function download_admin_certificates(array $nominationids, int $userid): void {
+        global $DB;
+
+        if (!self::is_admin($userid)) {
+            throw new moodle_exception('notauthorised', 'local_spotaward');
+        }
+
+        $nominationids = self::normalise_nomination_ids($nominationids);
+        if (empty($nominationids)) {
+            throw new moodle_exception('selectrecordsfordownload', 'local_spotaward');
+        }
+
+        $pdfcontents = [];
+        foreach ($nominationids as $nominationid) {
+            $nomination = self::get_nomination($nominationid);
+            if (empty($nomination->adminsharedtime)) {
+                throw new moodle_exception('invalidparameter');
+            }
+
+            self::ensure_nomination_certificates_generated($nominationid);
+            foreach (self::get_all_certificate_files($nominationid) as $file) {
+                $pdfcontents[] = $file->get_content();
+            }
+        }
+
+        $mergedpdf = self::merge_pdf_documents($pdfcontents, 'spotaward_admin_certificates.pdf');
+        if ($mergedpdf === '') {
+            throw new moodle_exception('nocertificates', 'local_spotaward');
+        }
+
+        $now = time();
+        [$insql, $params] = $DB->get_in_or_equal($nominationids, SQL_PARAMS_NAMED);
+        $params['admindownloadedtime'] = $now;
+        $params['admindownloadedby'] = $userid;
+        $params['timemodified'] = $now;
+        $DB->execute(
+            "UPDATE {spotaward_nominations}
+                SET admindownloadedtime = :admindownloadedtime,
+                    admindownloadedby = :admindownloadedby,
+                    timemodified = :timemodified
+              WHERE id $insql",
+            $params
+        );
+
+        $filename = 'Spot_Award_Admin_Certificates_' . userdate($now, '%Y%m%d_%H%M%S') . '.pdf';
+        header('Content-Type: application/pdf');
+        header('Content-Disposition: attachment; filename="' . $filename . '"');
+        header('Content-Length: ' . strlen($mergedpdf));
+
+        echo $mergedpdf;
         exit;
     }
 
@@ -3485,6 +4430,8 @@ final class api {
             'activitycount' => count($report['activities']),
             'studentcount' => count($students),
             'rows' => $report['rows'],
+            'rowsbystudent' => $report['rowsbystudent'],
+            'summarybystudent' => $report['summarybystudent'],
         ];
     }
 
@@ -3582,7 +4529,6 @@ final class api {
         }, $students);
 
         $grades = self::get_grade_item_grade_map($activities, $studentids);
-        $attendance = self::get_attendance_report_map($courseid, $activities, $studentids);
 
         $rows = [];
         $rowsbystudent = [];
@@ -3592,14 +4538,9 @@ final class api {
             $studentname = fullname($student);
 
             foreach ($activities as $activity) {
-                $attendancedata = $attendance[$activity['iteminstance']][$studentid] ?? null;
                 $gradevalue = $grades[$activity['gradeitemid']][$studentid] ?? null;
-                $displaygrade = self::format_report_grade(
-                    $activity,
-                    $gradevalue,
-                    $attendancedata['percentage'] ?? null
-                );
-                $completiondata = self::get_report_completion_data($activity, $gradevalue, $attendancedata);
+                $displaygrade = self::format_report_grade($activity, $gradevalue);
+                $completiondata = self::get_report_completion_data($activity, $gradevalue);
 
                 $row = [
                     'studentid' => $studentid,
@@ -3612,7 +4553,7 @@ final class api {
                     'typelabel' => $activity['typelabel'],
                     'module' => $activity['module'],
                     'grade' => $displaygrade,
-                    'scorepercent' => self::get_report_score_percent($activity, $gradevalue, $attendancedata),
+                    'scorepercent' => self::get_report_score_percent($activity, $gradevalue),
                     'completionvalue' => $completiondata['value'],
                     'completiontotal' => $completiondata['total'],
                 ];
@@ -4100,18 +5041,9 @@ final class api {
      *
      * @param array $activity
      * @param float|null $grade
-     * @param array|null $attendancedata
      * @return float|null
      */
-    private static function get_report_score_percent(array $activity, ?float $grade, ?array $attendancedata): ?float {
-        if ($activity['module'] === 'attendance') {
-            if (empty($attendancedata['total'])) {
-                return null;
-            }
-
-            return ($attendancedata['attended'] / $attendancedata['total']) * 100;
-        }
-
+    private static function get_report_score_percent(array $activity, ?float $grade): ?float {
         if ($grade === null || empty($activity['grademax']) || $activity['grademax'] <= 0) {
             return null;
         }
@@ -4124,17 +5056,9 @@ final class api {
      *
      * @param array $activity
      * @param float|null $grade
-     * @param array|null $attendancedata
      * @return array
      */
-    private static function get_report_completion_data(array $activity, ?float $grade, ?array $attendancedata): array {
-        if ($activity['module'] === 'attendance') {
-            return [
-                'value' => (int)($attendancedata['attended'] ?? 0),
-                'total' => (int)($attendancedata['total'] ?? 0),
-            ];
-        }
-
+    private static function get_report_completion_data(array $activity, ?float $grade): array {
         return [
             'value' => $grade !== null ? 1 : 0,
             'total' => 1,
@@ -4165,14 +5089,9 @@ final class api {
      *
      * @param array $activity
      * @param float|null $grade
-     * @param string|null $attendancepercentage
      * @return string
      */
-    private static function format_report_grade(array $activity, ?float $grade, ?string $attendancepercentage): string {
-        if ($activity['module'] === 'attendance' && $attendancepercentage !== null) {
-            return $attendancepercentage;
-        }
-
+    private static function format_report_grade(array $activity, ?float $grade): string {
         if ($grade === null) {
             return '-';
         }
@@ -4250,51 +5169,52 @@ final class api {
     private static function get_attendance_percentage(int $studentid, int $courseid): string {
         global $DB;
 
-        if (!self::table_has_field('attendance_sessions', 'id') ||
-            !self::table_has_field('attendance_log', 'sessionid') ||
-            !self::table_has_field('attendance_log', 'studentid')) {
+        if (!self::table_has_field('grade_items', 'courseid') ||
+            !self::table_has_field('grade_items', 'itemmodule') ||
+            !self::table_has_field('grade_grades', 'itemid') ||
+            !self::table_has_field('grade_grades', 'userid') ||
+            !self::table_has_field('grade_grades', 'finalgrade')) {
             return '-';
         }
 
         try {
-            if (self::table_has_field('attendance_sessions', 'courseid')) {
-                $totalsessions = (int)$DB->count_records('attendance_sessions', ['courseid' => $courseid]);
-                if ($totalsessions === 0) {
-                    return '-';
-                }
+            $sql = "SELECT gi.grademax, gg.finalgrade
+                      FROM {grade_items} gi
+                      JOIN {grade_grades} gg ON gg.itemid = gi.id
+                     WHERE gi.courseid = :courseid
+                       AND gi.itemtype = :itemtype
+                       AND gi.itemnumber = :itemnumber
+                       AND gi.itemmodule = :itemmodule
+                       AND gg.userid = :studentid
+                       AND gg.finalgrade IS NOT NULL";
+            $records = $DB->get_records_sql($sql, [
+                'courseid' => $courseid,
+                'itemtype' => 'mod',
+                'itemnumber' => 0,
+                'itemmodule' => 'attendance',
+                'studentid' => $studentid,
+            ]);
 
-                $sql = "SELECT COUNT(1)
-                          FROM {attendance_log} al
-                          JOIN {attendance_sessions} s ON s.id = al.sessionid
-                         WHERE s.courseid = :courseid
-                           AND al.studentid = :studentid";
-                $attended = (int)$DB->count_records_sql($sql, ['courseid' => $courseid, 'studentid' => $studentid]);
-
-                return round(($attended / $totalsessions) * 100, 2) . '%';
+            if (empty($records)) {
+                return '-';
             }
 
-            if (self::table_has_field('attendance_sessions', 'attendanceid') &&
-                self::table_has_field('attendance', 'id') &&
-                self::table_has_field('attendance', 'course')) {
-                $sql = "SELECT COUNT(1)
-                          FROM {attendance_sessions} s
-                          JOIN {attendance} a ON a.id = s.attendanceid
-                         WHERE a.course = :courseid";
-                $totalsessions = (int)$DB->count_records_sql($sql, ['courseid' => $courseid]);
-                if ($totalsessions === 0) {
-                    return '-';
+            $scoretotal = 0.0;
+            $scorecount = 0;
+            foreach ($records as $record) {
+                if ($record->grademax === null || (float)$record->grademax <= 0) {
+                    continue;
                 }
 
-                $sql = "SELECT COUNT(1)
-                          FROM {attendance_log} al
-                          JOIN {attendance_sessions} s ON s.id = al.sessionid
-                          JOIN {attendance} a ON a.id = s.attendanceid
-                         WHERE a.course = :courseid
-                           AND al.studentid = :studentid";
-                $attended = (int)$DB->count_records_sql($sql, ['courseid' => $courseid, 'studentid' => $studentid]);
-
-                return round(($attended / $totalsessions) * 100, 2) . '%';
+                $scoretotal += (((float)$record->finalgrade / (float)$record->grademax) * 100);
+                $scorecount++;
             }
+
+            if ($scorecount === 0) {
+                return '-';
+            }
+
+            return round($scoretotal / $scorecount, 2) . '%';
         } catch (\dml_exception $e) {
             debugging('Spot Award attendance report skipped: ' . $e->getMessage(), DEBUG_DEVELOPER);
         }
@@ -4628,6 +5548,34 @@ final class api {
     }
 
     /**
+     * Get dashboard data for Admin-shared records.
+     *
+     * @param string $statusfilter
+     * @return array
+     */
+    public static function get_admin_dashboard_data(string $statusfilter = 'active'): array {
+        global $DB;
+
+        $where = ['n.adminsharedtime > 0'];
+        if ($statusfilter === 'closed') {
+            $where[] = "n.status = 'closed'";
+        } else {
+            $where[] = "n.status <> 'closed'";
+        }
+
+        $sql = "SELECT n.id, n.courseid, n.maacexecutiveid, n.status, n.adminsharedtime, n.admindownloadedtime,
+                       c.fullname AS coursename,
+                       maac.firstname AS maacfirstname, maac.lastname AS maaclastname
+                  FROM {spotaward_nominations} n
+                  JOIN {course} c ON c.id = n.courseid
+             LEFT JOIN {user} maac ON maac.id = n.maacexecutiveid
+                 WHERE " . implode(' AND ', $where) . "
+              ORDER BY n.adminsharedtime DESC, n.id DESC";
+
+        return array_values($DB->get_records_sql($sql));
+    }
+
+    /**
      * Refresh nomination status based on items.
      *
      * @param int $nominationid
@@ -4752,6 +5700,10 @@ final class api {
             return true;
         }
 
+        if (!empty($nomination->adminsharedtime) && self::is_admin($userid)) {
+            return true;
+        }
+
         $ismanger = self::is_manager($userid);
         if ($ismanger) {
             return true;
@@ -4769,6 +5721,16 @@ final class api {
      */
     public static function is_assigned_maac_executive(stdClass $nomination, int $userid): bool {
         return !empty($nomination->maacexecutiveid) && (int)$nomination->maacexecutiveid === $userid;
+    }
+
+    /**
+     * Normalise nomination IDs from bulk request payloads.
+     *
+     * @param array $nominationids
+     * @return array
+     */
+    private static function normalise_nomination_ids(array $nominationids): array {
+        return array_values(array_unique(array_filter(array_map('intval', $nominationids))));
     }
 
     /**

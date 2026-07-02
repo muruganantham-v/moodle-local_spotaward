@@ -35,7 +35,6 @@ function local_spotaward_require_action_success_overlay(): void {
 
     $title = get_string('successfullycompleted', 'local_spotaward');
     $subtitle = get_string('redirecting', 'local_spotaward');
-    $goback = get_string('gobacknow', 'local_spotaward');
     $cancel = get_string('cancel');
     $close = get_string('close', 'local_spotaward');
 
@@ -88,7 +87,6 @@ function local_spotaward_require_action_success_overlay(): void {
                     '</div>' .
                 '</div>' .
                 '<div class="spotaward-success-actions">' .
-                    '<button type="button" class="btn btn-primary" data-spotaward-success-back="1">' . s($goback) . '</button>' .
                     '<button type="button" class="btn btn-secondary" data-spotaward-success-close="1">' . s($cancel) . '</button>' .
                 '</div>' .
             '</div>'
@@ -116,7 +114,7 @@ function local_spotaward_require_action_success_overlay(): void {
         '};return map[key]||{progress:"Processing request...",success:' . json_encode($title) . '};}' .
         'function getElementMessages(el){if(!el){return null;}var progress=el.getAttribute("data-spotaward-progress-message");var success=el.getAttribute("data-spotaward-success-message");if(progress&&success){return{progress:progress,success:success};}return null;}' .
         'function getElementActionText(el){if(!el){return "";}if(typeof el.value==="string"&&el.value.trim()!==""){return el.value;}return String(el.textContent||"").replace(/\s+/g," ").trim();}' .
-        'overlay.addEventListener("click",function(e){if(e.target.closest("[data-spotaward-success-back]")){window.history.back();return;}if(e.target.closest("[data-spotaward-success-close]")){overlay.classList.remove("is-open");document.body.classList.remove("spotaward-success-busy");}});' .
+        'overlay.addEventListener("click",function(e){if(e.target.closest("[data-spotaward-success-close]")){overlay.classList.remove("is-open");document.body.classList.remove("spotaward-success-busy");}});' .
         'function shouldStartForSubmitter(submitter){if(!submitter){return false;}var name=String(submitter.name||"");if(name==="previewdraft"||name==="cleardraft"){return false;}if(name==="submitnominations"||name==="submitbutton"){return true;}var id=String(submitter.id||"");if(id==="id_submitbutton"){return true;}return submitter.hasAttribute("data-spotaward-success-submit");}' .
         'function startOverlay(actionText, explicitMessages){if(open){return;}open=true;var messages=explicitMessages||getActionMessages(actionText);document.body.classList.add("spotaward-success-busy");overlay.classList.add("is-open");if(titleEl){titleEl.textContent=messages.progress;titleEl.classList.remove("is-done");}if(subtitleEl){subtitleEl.textContent="Please wait...";}if(spin){spin.className="spin-svg";}if(ring){ring.className="ring-arc";}if(tick){tick.className="tick-path";}window.setTimeout(function(){if(spin){spin.classList.add("stopped");}if(ring){ring.classList.add("full-green");}},850);window.setTimeout(function(){if(tick){tick.classList.add("drawn");}if(titleEl){titleEl.textContent=messages.success;titleEl.classList.add("is-done");}if(subtitleEl){subtitleEl.textContent=' . json_encode($subtitle) . ';}},1150);}' .
         'document.addEventListener("submit",function(e){var submitter=e.submitter;if(submitter&&submitter.name&&submitter.name.toLowerCase().indexOf("cancel")!==-1){return;}if(!shouldStartForSubmitter(submitter)){return;}startOverlay(getElementActionText(submitter),getElementMessages(submitter));},true);' .
@@ -180,6 +178,8 @@ function local_spotaward_nomination_form_js(moodle_url $ajaxurl): string {
     $strIot = addslashes(get_string('iotprofessional', 'local_spotaward'));
     $strLoading = addslashes(get_string('loading', 'core'));
     $strNoResults = addslashes(get_string('noresults', 'core'));
+    $strSuggested = addslashes(get_string('suggestedstudents', 'local_spotaward'));
+    $strSuggestedBadge = addslashes(get_string('suggestedbadge', 'local_spotaward'));
 
     return <<<JS
 (function () {
@@ -216,7 +216,12 @@ function local_spotaward_nomination_form_js(moodle_url $ajaxurl): string {
         '.sa-option { padding:8px 12px; cursor:pointer; }',
         '.sa-option:hover, .sa-option.sa-hl { background:#e8f0fe; }',
         '.sa-option.sa-selected { background:#f0f7ff; font-weight:500; }',
-        '.sa-option.sa-selected::after { content:" \u2714"; color:#0066cc; }',
+        '.sa-option.sa-suggested{background:#f6fcf6;border-bottom:1px solid #edf5ed;}',
+        '.sa-option.sa-suggested:hover,.sa-option.sa-suggested.sa-hl{background:#eaf7ea;}',
+        '.sa-option-main{display:flex;align-items:center;justify-content:space-between;gap:10px;}',
+        '.sa-option-label{display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap;}',
+        '.sa-option-tick{color:#0066cc;font-weight:700;line-height:1;}',
+        '.sa-option-badge{display:inline-flex;align-items:center;padding:2px 7px;border-radius:999px;background:#e4f3e5;color:#557d5a;font-size:11px;font-weight:700;white-space:nowrap;}',
         '.sa-empty { padding:8px 12px; color:#999; font-style:italic; }',
         '.sa-loading { padding:8px 12px; color:#666; }',
         '.sa-tag { font-size:11px; color:#6c757d; margin-top:3px; display:block; }',
@@ -257,6 +262,7 @@ function local_spotaward_nomination_form_js(moodle_url $ajaxurl): string {
         var ph       = opts.placeholder || 'Search...';
         var selected = [];   // [{value, label}]
         var allItems = [];   // [{value, label}] full list
+        var suggestedValues = {};
         var hlIdx    = -1;
 
         /* --- build DOM --- */
@@ -344,10 +350,38 @@ function local_spotaward_nomination_form_js(moodle_url $ajaxurl): string {
                 return;
             }
             var selVals = selected.map(function (s) { return String(s.value); });
-            shown.forEach(function (it, idx) {
+            var suggestedShown = shown.filter(function(it) {
+                return !!suggestedValues[String(it.value)];
+            });
+            var normalShown = shown.filter(function(it) {
+                return !suggestedValues[String(it.value)];
+            });
+            var orderedShown = suggestedShown.concat(normalShown);
+
+            orderedShown.forEach(function (it, idx) {
                 var div = document.createElement('div');
-                div.className = 'sa-option' + (selVals.indexOf(String(it.value)) !== -1 ? ' sa-selected' : '');
-                div.textContent = it.label;
+                div.className = 'sa-option' +
+                    (selVals.indexOf(String(it.value)) !== -1 ? ' sa-selected' : '') +
+                    (suggestedValues[String(it.value)] ? ' sa-suggested' : '');
+                var main = document.createElement('div');
+                main.className = 'sa-option-main';
+                var label = document.createElement('span');
+                label.className = 'sa-option-label';
+                label.appendChild(document.createTextNode(it.label));
+                if (selVals.indexOf(String(it.value)) !== -1) {
+                    var tick = document.createElement('span');
+                    tick.className = 'sa-option-tick';
+                    tick.textContent = '\u2714';
+                    label.appendChild(tick);
+                }
+                main.appendChild(label);
+                if (suggestedValues[String(it.value)]) {
+                    var badge = document.createElement('span');
+                    badge.className = 'sa-option-badge';
+                    badge.textContent = '$strSuggestedBadge';
+                    main.appendChild(badge);
+                }
+                div.appendChild(main);
                 div.setAttribute('data-idx', idx);
                 div.setAttribute('data-val', it.value);
                 div.addEventListener('mousedown', function (e) {
@@ -450,12 +484,25 @@ function local_spotaward_nomination_form_js(moodle_url $ajaxurl): string {
                 var o = document.createElement('option');
                 o.value = it.value;
                 o.text  = it.label;
+                if (it.suggested) {
+                    o.setAttribute('data-suggested', '1');
+                }
                 nativeSelect.add(o);
             });
             /* clear selection */
             selected = [];
             renderChips();
             if (wrap.classList.contains('sa-open')) renderDropdown(textInput.value);
+        }
+
+        function setSuggestedValues(values) {
+            suggestedValues = {};
+            (values || []).forEach(function(v) {
+                suggestedValues[String(v)] = true;
+            });
+            if (wrap.classList.contains('sa-open')) {
+                renderDropdown(textInput.value);
+            }
         }
 
         function setLoading(on) {
@@ -478,7 +525,10 @@ function local_spotaward_nomination_form_js(moodle_url $ajaxurl): string {
             for (var i = 0; i < nativeSelect.options.length; i++) {
                 var o = nativeSelect.options[i];
                 if (o.value && o.value !== '0' && o.value !== '') {
-                    allItems.push({ value: o.value, label: o.text });
+                    allItems.push({ value: o.value, label: o.text, suggested: o.getAttribute('data-suggested') === '1' });
+                    if (o.getAttribute('data-suggested') === '1') {
+                        suggestedValues[String(o.value)] = true;
+                    }
                 }
             }
             /* pre-select if native has a selected option */
@@ -516,6 +566,7 @@ function local_spotaward_nomination_form_js(moodle_url $ajaxurl): string {
         return {
             setItems: setItems,
             setLoading: setLoading,
+            setSuggestedValues: setSuggestedValues,
             setLocked: setLocked,
             setSelectedValues: setSelectedValues,
             getNativeSelect: function () { return nativeSelect; }
@@ -663,7 +714,7 @@ function local_spotaward_nomination_form_js(moodle_url $ajaxurl): string {
         });
     }
 
-    function buildAwardFields(categories, students) {
+    function buildAwardFields(categories, students, suggestions) {
         var container = document.getElementById('spotaward-award-fields');
         if (!container) return;
 
@@ -674,12 +725,21 @@ function local_spotaward_nomination_form_js(moodle_url $ajaxurl): string {
         });
         container.innerHTML = '';
         awardWidgets = {};
+        suggestions = suggestions || {};
+
+        var studentLookup = {};
+        students.forEach(function(student) {
+            studentLookup[String(student.id)] = student;
+        });
 
         var fieldmap = {};
 
         categories.forEach(function(category, index) {
             var fieldname = 'awardstudents_' + index;
             fieldmap[fieldname] = category;
+            var suggestedIds = (suggestions[category] || []).map(function(id) {
+                return String(id);
+            });
 
             var label = document.createElement('label');
             label.textContent = category;
@@ -694,16 +754,21 @@ function local_spotaward_nomination_form_js(moodle_url $ajaxurl): string {
                 var o = document.createElement('option');
                 o.value = s.id;
                 o.text = s.name + ' (' + s.email + ')';
+                if (suggestedIds.indexOf(String(s.id)) !== -1) {
+                    o.setAttribute('data-suggested', '1');
+                }
                 sel.add(o);
             });
 
             var wrap = document.createElement('div');
             wrap.className = 'form-group row fitem';
             wrap.appendChild(label);
+
             wrap.appendChild(sel);
             container.appendChild(wrap);
 
             awardWidgets[fieldname] = makeWidget(sel, { multiple: true, placeholder: '$strSelStudents' });
+            awardWidgets[fieldname].setSuggestedValues(suggestedIds);
         });
 
         if (awardFieldMapEl) {
@@ -719,7 +784,7 @@ function local_spotaward_nomination_form_js(moodle_url $ajaxurl): string {
             if (pmWarn0) pmWarn0.style.display = 'none';
             var maacWarn0 = document.getElementById('spotaward-maac-noassign');
             if (maacWarn0) maacWarn0.style.display = 'none';
-            buildAwardFields([], []);
+            buildAwardFields([], [], {});
             if (onLoaded) onLoaded(null);
             return;
         }
@@ -764,7 +829,7 @@ function local_spotaward_nomination_form_js(moodle_url $ajaxurl): string {
             var maacWarn = document.getElementById('spotaward-maac-noassign');
             if (maacWarn) maacWarn.style.display = maacItems.length === 0 ? '' : 'none';
 
-            buildAwardFields(data.categories || [], data.students || []);
+            buildAwardFields(data.categories || [], data.students || [], data.suggestions || {});
             if (onLoaded) onLoaded(data);
         };
         xhr.onerror = function() {
@@ -842,6 +907,10 @@ function local_spotaward_nomination_form_js(moodle_url $ajaxurl): string {
                 Object.keys(fieldmap).forEach(function(fn) {
                     if (fieldmap[fn] === category && awardWidgets[fn]) {
                         awardWidgets[fn].setSelectedValues(studentids.map(String));
+                        var nativeSelect = awardWidgets[fn].getNativeSelect ? awardWidgets[fn].getNativeSelect() : null;
+                        if (nativeSelect) {
+                            nativeSelect.dispatchEvent(new Event('change'));
+                        }
                     }
                 });
             });
@@ -1031,6 +1100,368 @@ function local_spotaward_render_data_table(array $columns, array $rows, array $o
 }
 
 /**
+ * Extract a numeric value from a formatted report string.
+ *
+ * @param string $value
+ * @return float|null
+ */
+function local_spotaward_report_extract_number(string $value): ?float {
+    $value = trim($value);
+    if ($value === '' || $value === '-') {
+        return null;
+    }
+
+    $numeric = preg_replace('/[^0-9.\-]/', '', $value);
+    if ($numeric === '' || $numeric === null || !is_numeric($numeric)) {
+        return null;
+    }
+
+    return (float)$numeric;
+}
+
+/**
+ * Format a report percentage value.
+ *
+ * @param float|null $value
+ * @param int $precision
+ * @return string
+ */
+function local_spotaward_report_format_percentage(?float $value, int $precision = 1): string {
+    if ($value === null) {
+        return '-';
+    }
+
+    return rtrim(rtrim(number_format($value, $precision, '.', ''), '0'), '.') . '%';
+}
+
+/**
+ * Render report metric cards.
+ *
+ * @param array $cards
+ * @return string
+ */
+function local_spotaward_render_report_metric_cards(array $cards): string {
+    $output = html_writer::start_div('spotaward-summary-grid');
+    foreach ($cards as $card) {
+        $classes = 'spotaward-stat-card';
+        if (!empty($card['class'])) {
+            $classes .= ' ' . $card['class'];
+        }
+
+        $output .= html_writer::start_div($classes);
+        $output .= html_writer::div((string)$card['value'], 'spotaward-stat-value');
+        $output .= html_writer::div((string)$card['label'], 'spotaward-stat-label');
+        if (!empty($card['meta'])) {
+            $output .= html_writer::div((string)$card['meta'], 'spotaward-report-card-meta');
+        }
+        $output .= html_writer::end_div();
+    }
+    $output .= html_writer::end_div();
+
+    return $output;
+}
+
+/**
+ * Render category insight cards.
+ *
+ * @param array $cards
+ * @return string
+ */
+function local_spotaward_render_report_category_cards(array $cards): string {
+    if (empty($cards)) {
+        return html_writer::tag('p', get_string('reportnotavailable', 'local_spotaward'), ['class' => 'spotaward-empty']);
+    }
+
+    $output = html_writer::start_div('spotaward-report-card-grid');
+    foreach ($cards as $card) {
+        $output .= html_writer::start_div('spotaward-report-mini-card');
+        $output .= html_writer::div(s($card['title']), 'spotaward-report-mini-title');
+        $output .= html_writer::start_div('spotaward-report-mini-metrics');
+        $output .= html_writer::div(
+            html_writer::div(s($card['score']), 'spotaward-report-mini-value') .
+            html_writer::div(get_string('scoreaverage', 'local_spotaward'), 'spotaward-report-mini-label'),
+            'spotaward-report-mini-metric'
+        );
+        $output .= html_writer::div(
+            html_writer::div(s($card['completion']), 'spotaward-report-mini-value') .
+            html_writer::div(get_string('completionaverage', 'local_spotaward'), 'spotaward-report-mini-label'),
+            'spotaward-report-mini-metric'
+        );
+        $output .= html_writer::end_div();
+        if (!empty($card['meta'])) {
+            $output .= html_writer::div(s($card['meta']), 'spotaward-report-mini-meta');
+        }
+        $output .= html_writer::end_div();
+    }
+    $output .= html_writer::end_div();
+
+    return $output;
+}
+
+/**
+ * Render a compact performer list.
+ *
+ * @param string $title
+ * @param array $students
+ * @param string $emptylabel
+ * @return string
+ */
+function local_spotaward_render_performer_list(string $title, array $students, string $emptylabel): string {
+    $output = html_writer::start_div('spotaward-card');
+    $output .= html_writer::start_div('spotaward-card-header');
+    $output .= html_writer::tag('h5', s($title), ['class' => 'spotaward-subsection-title']);
+    $output .= html_writer::end_div();
+    $output .= html_writer::start_div('spotaward-card-body');
+
+    if (empty($students)) {
+        $output .= html_writer::tag('p', s($emptylabel), ['class' => 'spotaward-empty']);
+    } else {
+        $output .= html_writer::start_tag('ul', ['class' => 'spotaward-report-list']);
+        foreach ($students as $student) {
+            $label = s($student['name']);
+            $score = s($student['score']);
+            $completion = s($student['completion']);
+            $meta = s($student['meta']);
+
+            $output .= html_writer::start_tag('li', ['class' => 'spotaward-report-list-item']);
+            $output .= html_writer::div(
+                html_writer::div($label, 'spotaward-report-list-title') .
+                html_writer::div($meta, 'spotaward-report-list-meta'),
+                'spotaward-report-list-main'
+            );
+            $output .= html_writer::div(
+                html_writer::span($score, 'spotaward-report-pill') .
+                html_writer::span($completion, 'spotaward-report-pill is-soft'),
+                'spotaward-report-list-side'
+            );
+            $output .= html_writer::end_tag('li');
+        }
+        $output .= html_writer::end_tag('ul');
+    }
+
+    $output .= html_writer::end_div();
+    $output .= html_writer::end_div();
+
+    return $output;
+}
+
+/**
+ * Render a report distribution table.
+ *
+ * @param array $bands
+ * @return string
+ */
+function local_spotaward_render_report_distribution_table(array $bands): string {
+    $rows = '';
+    foreach ($bands as $band) {
+        $rows .= html_writer::start_tag('tr');
+        $rows .= html_writer::tag('td', s($band['label']));
+        $rows .= html_writer::tag('td', (string)$band['count']);
+        $rows .= html_writer::tag('td', s($band['share']));
+        $rows .= html_writer::end_tag('tr');
+    }
+
+    return html_writer::tag(
+        'table',
+        html_writer::tag('thead', html_writer::tag('tr',
+            html_writer::tag('th', get_string('graderange', 'local_spotaward')) .
+            html_writer::tag('th', get_string('studentscount', 'local_spotaward')) .
+            html_writer::tag('th', get_string('percentage', 'local_spotaward'))
+        )) .
+        html_writer::tag('tbody', $rows),
+        ['class' => 'generaltable table table-striped spotaward-distribution-table']
+    );
+}
+
+/**
+ * Build student report insight cards.
+ *
+ * @param array $report
+ * @return array
+ */
+function local_spotaward_build_student_report_cards(array $report): array {
+    $cards = [];
+    foreach ($report['summaryrows'] ?? [] as $row) {
+        $cards[] = [
+            'title' => (string)$row['activity'],
+            'score' => (string)$row['percentage'],
+            'completion' => (string)$row['completionrate'],
+            'meta' => get_string('activitytype', 'local_spotaward'),
+        ];
+    }
+
+    return $cards;
+}
+
+/**
+ * Build course-level insight data from report rows.
+ *
+ * @param array $report
+ * @return array
+ */
+function local_spotaward_build_course_report_insights(array $report): array {
+    $rows = $report['rows'] ?? [];
+    $rowsbystudent = $report['rowsbystudent'] ?? [];
+
+    $categorygroups = [];
+    foreach ($rows as $row) {
+        $key = (string)($row['typelabel'] ?? '');
+        if ($key === '') {
+            continue;
+        }
+
+        if (!isset($categorygroups[$key])) {
+            $categorygroups[$key] = [
+                'title' => $key,
+                'scoretotal' => 0.0,
+                'scorecount' => 0,
+                'completionvalue' => 0,
+                'completiontotal' => 0,
+                'activitycount' => 0,
+            ];
+        }
+
+        if (($row['scorepercent'] ?? null) !== null) {
+            $categorygroups[$key]['scoretotal'] += (float)$row['scorepercent'];
+            $categorygroups[$key]['scorecount']++;
+        }
+
+        $categorygroups[$key]['completionvalue'] += (int)($row['completionvalue'] ?? 0);
+        $categorygroups[$key]['completiontotal'] += (int)($row['completiontotal'] ?? 0);
+        $categorygroups[$key]['activitycount']++;
+    }
+
+    $categorycards = [];
+    foreach ($categorygroups as $group) {
+        $categorycards[] = [
+            'title' => $group['title'],
+            'score' => local_spotaward_report_format_percentage(
+                $group['scorecount'] > 0 ? ($group['scoretotal'] / $group['scorecount']) : null
+            ),
+            'completion' => local_spotaward_report_format_percentage(
+                $group['completiontotal'] > 0 ? (($group['completionvalue'] / $group['completiontotal']) * 100) : null
+            ),
+            'meta' => get_string('showingactivities', 'local_spotaward') . ': ' . $group['activitycount'],
+        ];
+    }
+
+    usort($categorycards, static function(array $left, array $right): int {
+        return strcasecmp($left['title'], $right['title']);
+    });
+
+    $students = [];
+    foreach ($rowsbystudent as $studentrows) {
+        if (empty($studentrows)) {
+            continue;
+        }
+
+        $name = (string)($studentrows[0]['studentname'] ?? '');
+        $scoretotal = 0.0;
+        $scorecount = 0;
+        $completionvalue = 0;
+        $completiontotal = 0;
+
+        foreach ($studentrows as $row) {
+            if (($row['scorepercent'] ?? null) !== null) {
+                $scoretotal += (float)$row['scorepercent'];
+                $scorecount++;
+            }
+
+            $completionvalue += (int)($row['completionvalue'] ?? 0);
+            $completiontotal += (int)($row['completiontotal'] ?? 0);
+        }
+
+        $averagescore = $scorecount > 0 ? ($scoretotal / $scorecount) : null;
+        $completion = $completiontotal > 0 ? (($completionvalue / $completiontotal) * 100) : null;
+        $students[] = [
+            'name' => $name,
+            'scorevalue' => $averagescore,
+            'completionvalue' => $completion,
+            'score' => local_spotaward_report_format_percentage($averagescore),
+            'completion' => local_spotaward_report_format_percentage($completion),
+            'meta' => count($studentrows) . ' ' . get_string('showingactivities', 'local_spotaward'),
+        ];
+    }
+
+    $overallscore = null;
+    if (!empty($students)) {
+        $validscores = array_filter(array_column($students, 'scorevalue'), static function($value): bool {
+            return $value !== null;
+        });
+        if (!empty($validscores)) {
+            $overallscore = array_sum($validscores) / count($validscores);
+        }
+    }
+
+    $overallcompletion = null;
+    if (!empty($students)) {
+        $validcompletions = array_filter(array_column($students, 'completionvalue'), static function($value): bool {
+            return $value !== null;
+        });
+        if (!empty($validcompletions)) {
+            $overallcompletion = array_sum($validcompletions) / count($validcompletions);
+        }
+    }
+
+    $topperformers = $students;
+    usort($topperformers, static function(array $left, array $right): int {
+        return ($right['scorevalue'] ?? -1) <=> ($left['scorevalue'] ?? -1);
+    });
+    $topperformers = array_slice($topperformers, 0, 5);
+
+    $needsattention = array_values(array_filter($students, static function(array $student): bool {
+        return $student['scorevalue'] !== null;
+    }));
+    usort($needsattention, static function(array $left, array $right): int {
+        return ($left['scorevalue'] ?? 101) <=> ($right['scorevalue'] ?? 101);
+    });
+    $needsattention = array_slice($needsattention, 0, 5);
+
+    $ranges = [
+        ['label' => '90-100%', 'min' => 90, 'max' => 100, 'count' => 0],
+        ['label' => '80-89%', 'min' => 80, 'max' => 89.9999, 'count' => 0],
+        ['label' => '70-79%', 'min' => 70, 'max' => 79.9999, 'count' => 0],
+        ['label' => '60-69%', 'min' => 60, 'max' => 69.9999, 'count' => 0],
+        ['label' => '50-59%', 'min' => 50, 'max' => 59.9999, 'count' => 0],
+        ['label' => '0-49%', 'min' => 0, 'max' => 49.9999, 'count' => 0],
+    ];
+
+    $gradedstudents = array_values(array_filter($students, static function(array $student): bool {
+        return $student['scorevalue'] !== null;
+    }));
+    foreach ($gradedstudents as $student) {
+        foreach ($ranges as &$range) {
+            if ($student['scorevalue'] >= $range['min'] && $student['scorevalue'] <= $range['max']) {
+                $range['count']++;
+                break;
+            }
+        }
+        unset($range);
+    }
+
+    $distribution = [];
+    $gradedcount = count($gradedstudents);
+    foreach ($ranges as $range) {
+        $distribution[] = [
+            'label' => $range['label'],
+            'count' => $range['count'],
+            'share' => $gradedcount > 0
+                ? local_spotaward_report_format_percentage(($range['count'] / $gradedcount) * 100, 2)
+                : '0%',
+        ];
+    }
+
+    return [
+        'categorycards' => $categorycards,
+        'topperformers' => $topperformers,
+        'needsattention' => $needsattention,
+        'distribution' => $distribution,
+        'overallscore' => $overallscore,
+        'overallcompletion' => $overallcompletion,
+    ];
+}
+
+/**
  * Render report rows table.
  *
  * @param array $rows
@@ -1158,20 +1589,47 @@ function local_spotaward_render_student_report_content(stdClass $student, stdCla
         ];
     }
 
+    $rows = $report['rows'] ?? [];
+    $scoretotal = 0.0;
+    $scorecount = 0;
+    $completionvalue = 0;
+    $completiontotal = 0;
+    foreach ($rows as $row) {
+        if (($row['scorepercent'] ?? null) !== null) {
+            $scoretotal += (float)$row['scorepercent'];
+            $scorecount++;
+        }
+        $completionvalue += (int)($row['completionvalue'] ?? 0);
+        $completiontotal += (int)($row['completiontotal'] ?? 0);
+    }
+
+    $overallscore = $scorecount > 0 ? ($scoretotal / $scorecount) : null;
+    $overallcompletion = $completiontotal > 0 ? (($completionvalue / $completiontotal) * 100) : null;
+    $categorycards = local_spotaward_build_student_report_cards($report);
+
     $output = '';
     $output .= html_writer::tag('h4', s(fullname($student)), ['class' => 'spotaward-section-title']);
-    $output .= html_writer::start_div('spotaward-summary-grid is-compact');
-    $output .= html_writer::div(
-        html_writer::div(format_string($course->fullname), 'spotaward-stat-value') .
-        html_writer::div(get_string('course', 'local_spotaward'), 'spotaward-stat-label'),
-        'spotaward-stat-card'
-    );
-    $output .= html_writer::div(
-        html_writer::div((int)($report['activitycount'] ?? 0), 'spotaward-stat-value') .
-        html_writer::div(get_string('showingactivities', 'local_spotaward'), 'spotaward-stat-label'),
-        'spotaward-stat-card is-primary'
-    );
-    $output .= html_writer::end_div();
+    $output .= local_spotaward_render_report_metric_cards([
+        [
+            'value' => format_string($course->fullname),
+            'label' => get_string('course', 'local_spotaward'),
+        ],
+        [
+            'value' => (int)($report['activitycount'] ?? 0),
+            'label' => get_string('showingactivities', 'local_spotaward'),
+            'class' => 'is-primary',
+        ],
+        [
+            'value' => local_spotaward_report_format_percentage($overallscore),
+            'label' => get_string('overallaverage', 'local_spotaward'),
+            'class' => 'is-danger',
+        ],
+        [
+            'value' => local_spotaward_report_format_percentage($overallcompletion),
+            'label' => get_string('overallcompletion', 'local_spotaward'),
+            'class' => 'is-partial',
+        ],
+    ]);
 
     $output .= html_writer::start_div('spotaward-card');
     $output .= html_writer::start_div('spotaward-card-header');
@@ -1185,6 +1643,15 @@ function local_spotaward_render_student_report_content(stdClass $student, stdCla
         'nosearch' => true,
         'noclear' => true,
     ]);
+    $output .= html_writer::end_div();
+    $output .= html_writer::end_div();
+
+    $output .= html_writer::start_div('spotaward-card');
+    $output .= html_writer::start_div('spotaward-card-header');
+    $output .= html_writer::tag('h5', get_string('categoryinsights', 'local_spotaward'), ['class' => 'spotaward-subsection-title']);
+    $output .= html_writer::end_div();
+    $output .= html_writer::start_div('spotaward-card-body');
+    $output .= local_spotaward_render_report_category_cards($categorycards);
     $output .= html_writer::end_div();
     $output .= html_writer::end_div();
 
@@ -1208,20 +1675,63 @@ function local_spotaward_render_student_report_content(stdClass $student, stdCla
  * @return string
  */
 function local_spotaward_render_course_report_content(stdClass $course, array $report): string {
+    $insights = local_spotaward_build_course_report_insights($report);
+
     $output = '';
     $output .= html_writer::tag('h4', format_string($course->fullname), ['class' => 'spotaward-section-title']);
-    $output .= html_writer::start_div('spotaward-summary-grid is-compact');
-    $output .= html_writer::div(
-        html_writer::div((int)($report['studentcount'] ?? 0), 'spotaward-stat-value') .
-        html_writer::div(get_string('students', 'local_spotaward'), 'spotaward-stat-label'),
-        'spotaward-stat-card'
+    $output .= local_spotaward_render_report_metric_cards([
+        [
+            'value' => (int)($report['studentcount'] ?? 0),
+            'label' => get_string('students', 'local_spotaward'),
+        ],
+        [
+            'value' => (int)($report['activitycount'] ?? 0),
+            'label' => get_string('showingactivities', 'local_spotaward'),
+            'class' => 'is-primary',
+        ],
+        [
+            'value' => local_spotaward_report_format_percentage($insights['overallscore']),
+            'label' => get_string('overallaverage', 'local_spotaward'),
+            'class' => 'is-danger',
+        ],
+        [
+            'value' => local_spotaward_report_format_percentage($insights['overallcompletion']),
+            'label' => get_string('overallcompletion', 'local_spotaward'),
+            'class' => 'is-partial',
+        ],
+    ]);
+
+    $output .= html_writer::start_div('spotaward-card');
+    $output .= html_writer::start_div('spotaward-card-header');
+    $output .= html_writer::tag('h5', get_string('categoryinsights', 'local_spotaward'), ['class' => 'spotaward-subsection-title']);
+    $output .= html_writer::end_div();
+    $output .= html_writer::start_div('spotaward-card-body');
+    $output .= local_spotaward_render_report_category_cards($insights['categorycards']);
+    $output .= html_writer::end_div();
+    $output .= html_writer::end_div();
+
+    $output .= html_writer::start_div('spotaward-report-two-column');
+    $output .= local_spotaward_render_performer_list(
+        get_string('topperformers', 'local_spotaward'),
+        $insights['topperformers'],
+        get_string('noperformanceavailable', 'local_spotaward')
     );
-    $output .= html_writer::div(
-        html_writer::div((int)($report['activitycount'] ?? 0), 'spotaward-stat-value') .
-        html_writer::div(get_string('showingactivities', 'local_spotaward'), 'spotaward-stat-label'),
-        'spotaward-stat-card is-primary'
+    $output .= local_spotaward_render_performer_list(
+        get_string('needsattention', 'local_spotaward'),
+        $insights['needsattention'],
+        get_string('noperformanceavailable', 'local_spotaward')
     );
     $output .= html_writer::end_div();
+
+    $output .= html_writer::start_div('spotaward-card');
+    $output .= html_writer::start_div('spotaward-card-header');
+    $output .= html_writer::tag('h5', get_string('performancebands', 'local_spotaward'), ['class' => 'spotaward-subsection-title']);
+    $output .= html_writer::end_div();
+    $output .= html_writer::start_div('spotaward-card-body');
+    $output .= local_spotaward_render_report_distribution_table($insights['distribution']);
+    $output .= html_writer::end_div();
+    $output .= html_writer::end_div();
+
     $output .= html_writer::start_div('spotaward-card');
     $output .= html_writer::start_div('spotaward-card-header');
     $output .= html_writer::tag('h5', get_string('activitydetails', 'local_spotaward'), ['class' => 'spotaward-subsection-title']);

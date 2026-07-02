@@ -48,6 +48,8 @@ if (!$cancertificateaccess) {
     throw new moodle_exception('notauthorised', 'local_spotaward');
 }
 
+local_spotaward\local\api::ensure_nomination_certificates_generated($nominationid);
+
 if ($userid > 0) {
     $student = core_user::get_user($userid);
     if (!$student) {

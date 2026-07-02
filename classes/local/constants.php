@@ -28,6 +28,10 @@ final class constants {
         return self::get_role_id(get_config('local_spotaward', 'ss_team_role') ?: 'ssteam');
     }
 
+    public static function admin_roleid(): int {
+        return self::get_role_id(get_config('local_spotaward', 'admin_role') ?: 'admin');
+    }
+
     public static function student_roleid(): int {
         return self::get_role_id(get_config('local_spotaward', 'student_role') ?: 'student');
     }
