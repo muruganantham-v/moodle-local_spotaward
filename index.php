@@ -144,14 +144,14 @@ if ($ismanager && optional_param('delete', 0, PARAM_INT)) {
 }
 
 if ((is_siteadmin() || $ismanager || $isssteam) && optional_param('downloadcert', 0, PARAM_INT) && confirm_sesskey()) {
-    $downloadnomid = optional_param('downloadcert', 0, PARAM_INT);
-    $downloaduserid = optional_param('userid', 0, PARAM_INT);
-    $downloaditemid = optional_param('itemid', 0, PARAM_INT);
+    $nominationid = optional_param('downloadcert', 0, PARAM_INT);
+    $studentuserid = optional_param('userid', 0, PARAM_INT);
+    $nominationitemid = max(0, optional_param('itemid', 0, PARAM_INT));
 
-    $nomination = api::get_nomination($downloadnomid);
+    $nomination = api::get_nomination($nominationid);
     api::require_nomination_access($nomination, $USER->id);
 
-    if (!in_array($nomination->status, ['ssteamprogress', 'closed'], true) || !$downloaduserid) {
+    if (!in_array($nomination->status, ['ssteamprogress', 'closed'], true) || !$studentuserid) {
         throw new moodle_exception('invalidparameter');
     }
 
@@ -159,7 +159,7 @@ if ((is_siteadmin() || $ismanager || $isssteam) && optional_param('downloadcert'
         ob_end_clean();
     }
 
-    api::download_certificate($downloadnomid, $downloaduserid, $downloaditemid);
+    api::download_certificate($nominationid, $studentuserid, $nominationitemid);
     exit;
 }
 
