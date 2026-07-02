@@ -1351,14 +1351,6 @@ final class api {
         if (empty($recipients)) {
             throw new moodle_exception('noadminconfigured', 'local_spotaward');
         }
-        $nominator = core_user::get_user($nomination->nominatorid);
-        if ($nominator && !empty($nominator->email)) {
-            $recipients[] = $nominator;
-        }
-        $programmanager = core_user::get_user($nomination->programmanagerid);
-        if ($programmanager && !empty($programmanager->email)) {
-            $recipients[] = $programmanager;
-        }
 
         $attachment = [
             'path' => $filepath,
