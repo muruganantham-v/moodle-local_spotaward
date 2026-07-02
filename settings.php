@@ -152,6 +152,16 @@ $settings->add(new admin_setting_configselect(
         )
     ));
 
+    $settings->add(new admin_setting_description(
+        'local_spotaward/view_audit_log',
+        '',
+        html_writer::link(
+            new moodle_url('/local/spotaward/audit.php'),
+            get_string('viewauditlog', 'local_spotaward'),
+            ['class' => 'btn btn-secondary']
+        )
+    ));
+
     $settings->add(new admin_setting_heading(
         'local_spotaward/certificate_heading',
         get_string('certificatesettings', 'local_spotaward'),

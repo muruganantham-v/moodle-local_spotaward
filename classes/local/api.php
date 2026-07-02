@@ -2248,6 +2248,164 @@ final class api {
         return array_values($DB->get_records_sql($sql, ['nominationid' => $nominationid]));
     }
 
+    /**
+     * Get site-wide audit log rows with filters and pagination.
+     *
+     * @param array $filters
+     * @param int $page
+     * @param int $perpage
+     * @return array
+     */
+    public static function get_audit_log(array $filters = [], int $page = 0, int $perpage = 50): array {
+        global $DB;
+
+        [$where, $params] = self::build_audit_log_where_sql($filters);
+        $offset = max(0, $page) * max(1, $perpage);
+
+        $sql = "SELECT st.id,
+                       st.nominationid,
+                       st.nominationitemid,
+                       st.actorid,
+                       st.fromstatus,
+                       st.tostatus,
+                       st.reason,
+                       st.timecreated,
+                       n.courseid,
+                       c.fullname AS coursename,
+                       c.shortname AS courseshortname,
+                       a.firstname AS actorfirstname,
+                       a.lastname AS actorlastname,
+                       a.email AS actoremail,
+                       s.id AS studentid,
+                       s.firstname AS studentfirstname,
+                       s.lastname AS studentlastname
+                  FROM {spotaward_status_track} st
+             LEFT JOIN {spotaward_nominations} n ON n.id = st.nominationid
+             LEFT JOIN {course} c ON c.id = n.courseid
+             LEFT JOIN {user} a ON a.id = st.actorid
+             LEFT JOIN {spotaward_nomination_items} ni ON ni.id = st.nominationitemid
+             LEFT JOIN {user} s ON s.id = ni.studentid
+                 WHERE $where
+              ORDER BY st.timecreated DESC, st.id DESC";
+
+        return array_values($DB->get_records_sql($sql, $params, $offset, max(1, $perpage)));
+    }
+
+    /**
+     * Count audit log rows matching the given filters.
+     *
+     * @param array $filters
+     * @return int
+     */
+    public static function count_audit_log_records(array $filters = []): int {
+        global $DB;
+
+        [$where, $params] = self::build_audit_log_where_sql($filters);
+        return (int)$DB->count_records_sql(
+            "SELECT COUNT(1)
+               FROM {spotaward_status_track} st
+          LEFT JOIN {spotaward_nominations} n ON n.id = st.nominationid
+              WHERE $where",
+            $params
+        );
+    }
+
+    /**
+     * Build actor dropdown options for the audit viewer.
+     *
+     * @return array
+     */
+    public static function get_audit_log_actor_options(): array {
+        global $DB;
+
+        $sql = "SELECT DISTINCT u.id, u.firstname, u.lastname, u.email
+                  FROM {spotaward_status_track} st
+                  JOIN {user} u ON u.id = st.actorid
+              ORDER BY u.firstname ASC, u.lastname ASC, u.id ASC";
+
+        $options = [0 => get_string('allactors', 'local_spotaward')];
+        foreach ($DB->get_records_sql($sql) as $user) {
+            $label = fullname($user);
+            if (!empty($user->email)) {
+                $label .= ' (' . $user->email . ')';
+            }
+            $options[(int)$user->id] = $label;
+        }
+
+        return $options;
+    }
+
+    /**
+     * Build status filter options for the audit viewer.
+     *
+     * @return array
+     */
+    public static function get_audit_log_status_options(): array {
+        $statuses = ['pending', 'underreview', 'ssteamprogress', 'rejected', 'closed'];
+        $options = ['' => get_string('allstatuses', 'local_spotaward')];
+
+        foreach ($statuses as $status) {
+            $options[$status] = get_string($status, 'local_spotaward');
+        }
+
+        return $options;
+    }
+
+    /**
+     * Build audit log WHERE SQL and params from filters.
+     *
+     * @param array $filters
+     * @return array
+     */
+    private static function build_audit_log_where_sql(array $filters): array {
+        $where = ['1 = 1'];
+        $params = [];
+
+        $actorid = !empty($filters['actorid']) ? (int)$filters['actorid'] : 0;
+        if ($actorid > 0) {
+            $where[] = 'st.actorid = :auditactorid';
+            $params['auditactorid'] = $actorid;
+        }
+
+        $nominationid = !empty($filters['nominationid']) ? (int)$filters['nominationid'] : 0;
+        if ($nominationid > 0) {
+            $where[] = 'st.nominationid = :auditnominationid';
+            $params['auditnominationid'] = $nominationid;
+        }
+
+        $fromstatus = trim((string)($filters['fromstatus'] ?? ''));
+        if ($fromstatus !== '') {
+            $where[] = 'st.fromstatus = :auditfromstatus';
+            $params['auditfromstatus'] = $fromstatus;
+        }
+
+        $tostatus = trim((string)($filters['tostatus'] ?? ''));
+        if ($tostatus !== '') {
+            $where[] = 'st.tostatus = :audittostatus';
+            $params['audittostatus'] = $tostatus;
+        }
+
+        $datefrom = trim((string)($filters['datefrom'] ?? ''));
+        if ($datefrom !== '') {
+            $timestamp = strtotime($datefrom . ' 00:00:00');
+            if ($timestamp !== false) {
+                $where[] = 'st.timecreated >= :auditdatefrom';
+                $params['auditdatefrom'] = $timestamp;
+            }
+        }
+
+        $dateto = trim((string)($filters['dateto'] ?? ''));
+        if ($dateto !== '') {
+            $timestamp = strtotime($dateto . ' 23:59:59');
+            if ($timestamp !== false) {
+                $where[] = 'st.timecreated <= :auditdateto';
+                $params['auditdateto'] = $timestamp;
+            }
+        }
+
+        return [implode(' AND ', $where), $params];
+    }
+
 /**
      * Render Mustache placeholders for spotaward data.
      *
