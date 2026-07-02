@@ -14,7 +14,7 @@ $id = required_param('id', PARAM_INT);
 $nomination = api::get_nomination($id);
 api::require_nomination_access($nomination, $USER->id);
 
-if (!api::is_assigned_maac_executive($nomination, (int)$USER->id) && !is_siteadmin()) {
+if (!api::is_ss_team((int)$USER->id) && !is_siteadmin()) {
     throw new moodle_exception('notauthorised', 'local_spotaward');
 }
 if ($nomination->status !== 'ssteamprogress') {

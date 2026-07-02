@@ -33,6 +33,7 @@ $canreview = is_siteadmin() || ((int)$nomination->programmanagerid === (int)$USE
 $cancontinuereview = $canreview && in_array($nomination->status, ['pending', 'underreview'], true);
 $canmanagerapprove = is_siteadmin() || api::is_manager($USER->id);
 $isssteam = api::is_assigned_maac_executive($nomination, (int)$USER->id);
+$cansharetoadmin = is_siteadmin() || api::is_ss_team((int)$USER->id);
 $canviewcertificates = ($canmanagerapprove || $isssteam)
     && in_array($nomination->status, ['ssteamprogress', 'closed'], true);
 
@@ -355,7 +356,7 @@ if (in_array($nomination->status, ['ssteamprogress', 'closed'], true)) {
         );
     }
 
-    if ($isssteam && $nomination->status === 'ssteamprogress') {
+    if ($cansharetoadmin && $nomination->status === 'ssteamprogress') {
         $sharetoadminbutton = html_writer::link(
             new moodle_url('/local/spotaward/share_admin.php', ['id' => $id]),
             get_string('sharetoadmin', 'local_spotaward'),
