@@ -6045,6 +6045,54 @@ final class api {
     }
 
     /**
+     * Bulk update PM-reviewable nomination items.
+     *
+     * @param int $nominationid
+     * @param array $itemids
+     * @param string $status
+     * @param int $actorid
+     * @param string|null $reason
+     * @return int
+     */
+    public static function bulk_update_review_item_status(int $nominationid, array $itemids, string $status, int $actorid,
+            ?string $reason = null): int {
+        $nomination = self::get_nomination($nominationid);
+        self::require_nomination_access($nomination, $actorid);
+
+        if (!is_siteadmin($actorid) && (int)$nomination->programmanagerid !== $actorid) {
+            throw new moodle_exception('notauthorised', 'local_spotaward');
+        }
+        if (!in_array($nomination->status, ['pending', 'underreview'], true)) {
+            throw new moodle_exception('invalidparameter');
+        }
+
+        $itemids = array_values(array_unique(array_filter(array_map('intval', $itemids))));
+        if (empty($itemids)) {
+            throw new moodle_exception('selectstudentsforbulkreview', 'local_spotaward');
+        }
+
+        $updatedcount = 0;
+        foreach (self::get_nomination_items($nominationid) as $item) {
+            if (!in_array((int)$item->id, $itemids, true)) {
+                continue;
+            }
+            if (!in_array($item->status, ['pending', 'underreview'], true)) {
+                continue;
+            }
+
+            self::update_item_status((int)$item->id, $status, $actorid, $reason, true);
+            $updatedcount++;
+        }
+
+        if ($updatedcount === 0) {
+            throw new moodle_exception('noreviewableitemsselected', 'local_spotaward');
+        }
+
+        self::refresh_nomination_status($nominationid);
+        return $updatedcount;
+    }
+
+    /**
      * Whether a username should be highlighted in Admission ID tables.
      *
      * @param string $username

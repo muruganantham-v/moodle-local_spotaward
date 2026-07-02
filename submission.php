@@ -3,10 +3,12 @@
 
 require_once(__DIR__ . '/../../config.php');
 require_once(__DIR__ . '/lib.php');
+require_once(__DIR__ . '/forms/bulk_rejection_form.php');
 require_once(__DIR__ . '/forms/rejection_form.php');
 require_once(__DIR__ . '/forms/closure_form.php');
 require_once(__DIR__ . '/forms/close_record_form.php');
 
+use local_spotaward\forms\bulk_rejection_form;
 use local_spotaward\forms\close_record_form;
 use local_spotaward\forms\closure_form;
 use local_spotaward\forms\rejection_form;
@@ -17,6 +19,8 @@ require_login();
 $id = required_param('id', PARAM_INT);
 $action = optional_param('action', '', PARAM_ALPHA);
 $itemid = optional_param('itemid', 0, PARAM_INT);
+$selecteditemscsv = optional_param('selecteditemscsv', '', PARAM_TEXT);
+$selecteditemids = array_values(array_unique(optional_param_array('selecteditems', [], PARAM_INT)));
 
 $nomination = api::get_nomination($id);
 api::require_nomination_access($nomination, $USER->id);
@@ -95,6 +99,14 @@ if ($action === 'approveall' && $cancontinuereview && confirm_sesskey()) {
     );
 }
 
+if ($action === 'bulkapprove' && $cancontinuereview && confirm_sesskey()) {
+    $approvedcount = api::bulk_update_review_item_status($id, $selecteditemids, 'ssteamprogress', $USER->id);
+    local_spotaward_success_redirect(
+        new moodle_url('/local/spotaward/submission.php', ['id' => $id]),
+        get_string('selectedstudentsapproved', 'local_spotaward', $approvedcount)
+    );
+}
+
 if ($isssteam && in_array($action, ['bulkregenerate', 'bulkshare'], true) && confirm_sesskey()) {
     if (!in_array($nomination->status, ['ssteamprogress', 'closed'], true)) {
         throw new moodle_exception('invalidparameter');
@@ -132,6 +144,32 @@ if ($action === 'reject' && $itemid && $cancontinuereview) {
         local_spotaward_success_redirect(
             new moodle_url('/local/spotaward/submission.php', ['id' => $id]),
             get_string('reviewupdated', 'local_spotaward')
+        );
+    }
+}
+
+$bulkrejectionform = null;
+if ($action === 'bulkreject' && $cancontinuereview) {
+    $selecteditemsvalue = $selecteditemscsv !== '' ? $selecteditemscsv : implode(',', $selecteditemids);
+    $bulkrejectionform = new bulk_rejection_form(null, [
+        'selectedcount' => count(array_filter(array_map('intval', explode(',', $selecteditemsvalue)))),
+    ]);
+    $bulkrejectionform->set_data([
+        'id' => $id,
+        'action' => 'bulkreject',
+        'selecteditemscsv' => $selecteditemsvalue,
+    ]);
+
+    if ($bulkrejectionform->is_cancelled()) {
+        redirect(new moodle_url('/local/spotaward/submission.php', ['id' => $id]));
+    } else if ($data = $bulkrejectionform->get_data()) {
+        $bulkitemids = array_values(array_unique(array_filter(array_map('intval',
+            explode(',', (string)$data->selecteditemscsv)))));
+        $rejectedcount = api::bulk_update_review_item_status($id, $bulkitemids, 'rejected', $USER->id,
+            $data->rejectionreason);
+        local_spotaward_success_redirect(
+            new moodle_url('/local/spotaward/submission.php', ['id' => $id]),
+            get_string('selectedstudentsrejected', 'local_spotaward', $rejectedcount)
         );
     }
 }
@@ -219,48 +257,54 @@ echo html_writer::tag('h3', get_string('submissiondetail', 'local_spotaward'), [
 $PAGE->requires->js_init_code(local_spotaward_submission_report_modal_js(new moodle_url('/local/spotaward/ajax.php')));
 $PAGE->requires->js_init_code(<<<JS
 (function() {
-    var form = document.querySelector('.spotaward-bulk-certificate-form');
-    if (!form) {
-        return;
-    }
-    var defaultActions = document.querySelector('[data-spotaward-default-actions]');
-    var selectedActions = form.querySelector('[data-spotaward-selected-actions]');
-    var checkboxes = form.querySelectorAll('.spotaward-student-select');
-    var selectAll = form.querySelector('.spotaward-student-select-all');
+    var forms = document.querySelectorAll('[data-spotaward-bulk-select-form]');
+    Array.prototype.forEach.call(forms, function(form) {
+        var defaultSelector = form.getAttribute('data-spotaward-default-actions-target');
+        var defaultActions = defaultSelector ? document.querySelector(defaultSelector) : null;
+        var selectedActions = form.querySelector('[data-spotaward-selected-actions]');
+        var checkboxes = form.querySelectorAll('.spotaward-student-select');
+        var selectAll = form.querySelector('.spotaward-student-select-all');
+        var countLabels = form.querySelectorAll('[data-spotaward-selection-label]');
+        if (!checkboxes.length) {
+            return;
+        }
 
-    function toggleActions() {
-        var hasSelection = Array.prototype.some.call(checkboxes, function(checkbox) {
-            return checkbox.checked;
-        });
-        if (selectAll) {
+        function toggleActions() {
             var checkedCount = Array.prototype.filter.call(checkboxes, function(checkbox) {
                 return checkbox.checked;
             }).length;
-            selectAll.checked = checkboxes.length > 0 && checkedCount === checkboxes.length;
-            selectAll.indeterminate = checkedCount > 0 && checkedCount < checkboxes.length;
-        }
-        if (defaultActions) {
-            defaultActions.hidden = hasSelection;
-            defaultActions.classList.toggle('hidden', hasSelection);
-        }
-        if (selectedActions) {
-            selectedActions.hidden = !hasSelection;
-            selectedActions.classList.toggle('hidden', !hasSelection);
-        }
-    }
-
-    Array.prototype.forEach.call(checkboxes, function(checkbox) {
-        checkbox.addEventListener('change', toggleActions);
-    });
-    if (selectAll) {
-        selectAll.addEventListener('change', function() {
-            Array.prototype.forEach.call(checkboxes, function(checkbox) {
-                checkbox.checked = selectAll.checked;
+            var hasSelection = checkedCount > 0;
+            if (selectAll) {
+                selectAll.checked = checkboxes.length > 0 && checkedCount === checkboxes.length;
+                selectAll.indeterminate = checkedCount > 0 && checkedCount < checkboxes.length;
+            }
+            if (defaultActions) {
+                defaultActions.hidden = hasSelection;
+                defaultActions.classList.toggle('hidden', hasSelection);
+            }
+            if (selectedActions) {
+                selectedActions.hidden = !hasSelection;
+                selectedActions.classList.toggle('hidden', !hasSelection);
+            }
+            Array.prototype.forEach.call(countLabels, function(label) {
+                var baseLabel = label.getAttribute('data-spotaward-selection-label') || '';
+                label.textContent = hasSelection ? baseLabel + ' (' + checkedCount + ')' : baseLabel;
             });
-            toggleActions();
+        }
+
+        Array.prototype.forEach.call(checkboxes, function(checkbox) {
+            checkbox.addEventListener('change', toggleActions);
         });
-    }
-    toggleActions();
+        if (selectAll) {
+            selectAll.addEventListener('change', function() {
+                Array.prototype.forEach.call(checkboxes, function(checkbox) {
+                    checkbox.checked = selectAll.checked;
+                });
+                toggleActions();
+            });
+        }
+        toggleActions();
+    });
 }());
 JS);
 
@@ -402,6 +446,16 @@ if ($rejectionform) {
     echo html_writer::end_div();
     echo html_writer::end_div();
 }
+if ($bulkrejectionform) {
+    echo html_writer::start_div('spotaward-card');
+    echo html_writer::start_div('spotaward-card-header');
+    echo html_writer::tag('h4', get_string('rejectselectedstudents', 'local_spotaward'));
+    echo html_writer::end_div();
+    echo html_writer::start_div('spotaward-card-body');
+    $bulkrejectionform->display();
+    echo html_writer::end_div();
+    echo html_writer::end_div();
+}
 if ($closureform) {
     echo html_writer::start_div('spotaward-card');
     echo html_writer::start_div('spotaward-card-header');
@@ -446,10 +500,11 @@ if ($cancontinuereview) {
     }
 }
 
+$showpmreviewbulkactions = $cancontinuereview;
 $showbulkcertificateactions = $isssteam && in_array($nomination->status, ['ssteamprogress', 'closed'], true);
 
 $columns = [];
-if ($showbulkcertificateactions) {
+if ($showpmreviewbulkactions || $showbulkcertificateactions) {
     $columns[] = [
         'key' => 'selectstudent',
         'label' => html_writer::empty_tag('input', [
@@ -545,9 +600,11 @@ foreach ($items as $item) {
         'rejectionreason' => local_spotaward_table_cell(s($rejectionreason), ['text' => $rejectionreason]),
         'actions' => local_spotaward_table_cell(implode(' | ', $actions), ['text' => implode(' ', array_map('strip_tags', $actions)), 'search' => '']),
     ];
-    if ($showbulkcertificateactions) {
+    if ($showpmreviewbulkactions || $showbulkcertificateactions) {
         $checkbox = '';
-        if (in_array($item->status, ['ssteamprogress', 'closed'], true)) {
+        $isselectableforreview = $showpmreviewbulkactions && in_array($item->status, ['pending', 'underreview'], true);
+        $isselectableforcertificates = $showbulkcertificateactions && in_array($item->status, ['ssteamprogress', 'closed'], true);
+        if ($isselectableforreview || $isselectableforcertificates) {
             $checkbox = html_writer::empty_tag('input', [
                 'type' => 'checkbox',
                 'name' => 'selecteditems[]',
@@ -566,35 +623,64 @@ echo html_writer::start_div('spotaward-card-header');
 echo html_writer::tag('h4', get_string('studentstatus', 'local_spotaward'));
 echo html_writer::end_div();
 echo html_writer::start_div('spotaward-card-body');
-if ($showbulkcertificateactions) {
+if ($showpmreviewbulkactions || $showbulkcertificateactions) {
     echo html_writer::start_tag('form', [
         'method' => 'post',
         'action' => (new moodle_url('/local/spotaward/submission.php', ['id' => $id]))->out(false),
         'class' => 'spotaward-bulk-certificate-form',
+        'data-spotaward-bulk-select-form' => '1',
+        'data-spotaward-default-actions-target' => $showbulkcertificateactions ? '[data-spotaward-default-actions]' : '',
     ]);
     echo html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'sesskey', 'value' => sesskey()]);
-    echo html_writer::div(
-        html_writer::tag('button', get_string('regenerateselectedcertificates', 'local_spotaward'), [
-            'type' => 'submit',
-            'name' => 'action',
-            'value' => 'bulkregenerate',
-            'class' => 'btn btn-warning',
-            'data-spotaward-success-submit' => '1',
-            'data-spotaward-progress-message' => 'Re-generating certificate...',
-            'data-spotaward-success-message' => 'Re-generated certificate',
-        ]) .
-        html_writer::tag('button', get_string('shareselectedcertificatestostudents', 'local_spotaward'), [
-            'type' => 'submit',
-            'name' => 'action',
-            'value' => 'bulkshare',
-            'class' => 'btn btn-success',
-            'data-spotaward-success-submit' => '1',
-            'data-spotaward-progress-message' => 'Sharing certificate to selected student...',
-            'data-spotaward-success-message' => 'Certificate shared to selected student',
-        ]),
-        'spotaward-action-row mb-3 hidden',
-        ['data-spotaward-selected-actions' => '1', 'hidden' => 'hidden']
-    );
+    if ($showpmreviewbulkactions) {
+        echo html_writer::div(
+            html_writer::tag('button', get_string('approveselectedstudents', 'local_spotaward'), [
+                'type' => 'submit',
+                'name' => 'action',
+                'value' => 'bulkapprove',
+                'class' => 'btn btn-success',
+                'onclick' => 'return confirm("' . get_string('confirmapproveselectedstudents', 'local_spotaward') . '");',
+                'data-spotaward-success-submit' => '1',
+                'data-spotaward-progress-message' => 'Approving selected students...',
+                'data-spotaward-success-message' => 'Selected students approved',
+                'data-spotaward-selection-label' => get_string('approveselectedstudents', 'local_spotaward'),
+            ]) .
+            html_writer::tag('button', get_string('rejectselectedstudents', 'local_spotaward'), [
+                'type' => 'submit',
+                'name' => 'action',
+                'value' => 'bulkreject',
+                'class' => 'btn btn-danger',
+                'data-spotaward-selection-label' => get_string('rejectselectedstudents', 'local_spotaward'),
+            ]),
+            'spotaward-action-row mb-3 hidden',
+            ['data-spotaward-selected-actions' => '1', 'hidden' => 'hidden']
+        );
+    } else if ($showbulkcertificateactions) {
+        echo html_writer::div(
+            html_writer::tag('button', get_string('regenerateselectedcertificates', 'local_spotaward'), [
+                'type' => 'submit',
+                'name' => 'action',
+                'value' => 'bulkregenerate',
+                'class' => 'btn btn-warning',
+                'data-spotaward-success-submit' => '1',
+                'data-spotaward-progress-message' => 'Re-generating certificate...',
+                'data-spotaward-success-message' => 'Re-generated certificate',
+                'data-spotaward-selection-label' => get_string('regenerateselectedcertificates', 'local_spotaward'),
+            ]) .
+            html_writer::tag('button', get_string('shareselectedcertificatestostudents', 'local_spotaward'), [
+                'type' => 'submit',
+                'name' => 'action',
+                'value' => 'bulkshare',
+                'class' => 'btn btn-success',
+                'data-spotaward-success-submit' => '1',
+                'data-spotaward-progress-message' => 'Sharing certificate to selected student...',
+                'data-spotaward-success-message' => 'Certificate shared to selected student',
+                'data-spotaward-selection-label' => get_string('shareselectedcertificatestostudents', 'local_spotaward'),
+            ]),
+            'spotaward-action-row mb-3 hidden',
+            ['data-spotaward-selected-actions' => '1', 'hidden' => 'hidden']
+        );
+    }
 }
 echo local_spotaward_render_data_table($columns, $rows, [
     'id' => 'spotaward-submission-items',
@@ -602,7 +688,7 @@ echo local_spotaward_render_data_table($columns, $rows, [
     'searchlabel' => 'Search student',
     'searchplaceholder' => 'name, email, admission id',
 ]);
-if ($showbulkcertificateactions) {
+if ($showpmreviewbulkactions || $showbulkcertificateactions) {
     echo html_writer::end_tag('form');
 }
 echo html_writer::end_div();
