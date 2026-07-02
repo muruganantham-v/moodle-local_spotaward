@@ -7,10 +7,12 @@ require_once(__DIR__ . '/forms/bulk_rejection_form.php');
 require_once(__DIR__ . '/forms/rejection_form.php');
 require_once(__DIR__ . '/forms/closure_form.php');
 require_once(__DIR__ . '/forms/close_record_form.php');
+require_once(__DIR__ . '/forms/reassign_nomination_form.php');
 
 use local_spotaward\forms\bulk_rejection_form;
 use local_spotaward\forms\close_record_form;
 use local_spotaward\forms\closure_form;
+use local_spotaward\forms\reassign_nomination_form;
 use local_spotaward\forms\rejection_form;
 use local_spotaward\local\api;
 
@@ -38,6 +40,7 @@ $cancontinuereview = $canreview && in_array($nomination->status, ['pending', 'un
 $canmanagerapprove = is_siteadmin() || api::is_manager($USER->id);
 $isssteam = api::is_assigned_maac_executive($nomination, (int)$USER->id);
 $cansharetoadmin = is_siteadmin() || api::is_ss_team((int)$USER->id);
+$canreassign = (is_siteadmin() || $isssteam) && in_array($nomination->status, ['pending', 'ssteamprogress'], true);
 $canviewcertificates = ($canmanagerapprove || $isssteam)
     && in_array($nomination->status, ['ssteamprogress', 'closed'], true);
 
@@ -222,6 +225,58 @@ if ($action === 'closerecord' && $isssteam && $nomination->status === 'ssteampro
         local_spotaward_success_redirect(
             new moodle_url('/local/spotaward/submission.php', ['id' => $id]),
             get_string('recordclosed', 'local_spotaward')
+        );
+    }
+}
+
+$reassignform = null;
+if ($action === 'reassign' && $canreassign) {
+    $programmanageroptions = [];
+    foreach (api::get_program_managers_for_course((int)$nomination->courseid) as $user) {
+        $programmanageroptions[(int)$user->id] = fullname($user);
+    }
+    if (!isset($programmanageroptions[(int)$nomination->programmanagerid]) && $programmanager) {
+        $programmanageroptions[(int)$nomination->programmanagerid] = fullname($programmanager);
+    }
+
+    $maacexecutiveoptions = [];
+    foreach (api::get_maac_executives_for_course((int)$nomination->courseid) as $user) {
+        $maacexecutiveoptions[(int)$user->id] = fullname($user);
+    }
+    if (!isset($maacexecutiveoptions[(int)$nomination->maacexecutiveid]) && $maacexecutive) {
+        $maacexecutiveoptions[(int)$nomination->maacexecutiveid] = fullname($maacexecutive);
+    }
+
+    $reassignform = new reassign_nomination_form(null, [
+        'programmanageroptions' => $programmanageroptions,
+        'maacexecutiveoptions' => $maacexecutiveoptions,
+        'currentprogrammanagerid' => (int)$nomination->programmanagerid,
+        'currentmaacexecutiveid' => (int)$nomination->maacexecutiveid,
+    ]);
+    $reassignform->set_data([
+        'id' => $id,
+        'action' => 'reassign',
+        'programmanagerid' => (int)$nomination->programmanagerid,
+        'maacexecutiveid' => (int)$nomination->maacexecutiveid,
+        'currentprogrammanagerid' => (int)$nomination->programmanagerid,
+        'currentmaacexecutiveid' => (int)$nomination->maacexecutiveid,
+    ]);
+
+    if ($reassignform->is_cancelled()) {
+        redirect(new moodle_url('/local/spotaward/submission.php', ['id' => $id]));
+    } else if ($data = $reassignform->get_data()) {
+        api::reassign_nomination_role(
+            $id,
+            (int)$USER->id,
+            (int)$data->programmanagerid,
+            (int)$data->maacexecutiveid
+        );
+        $returnurl = is_siteadmin($USER->id)
+            ? new moodle_url('/local/spotaward/submission.php', ['id' => $id])
+            : new moodle_url('/local/spotaward/index.php', ['view' => 'ssteam']);
+        local_spotaward_success_redirect(
+            $returnurl,
+            get_string('reassignmentupdated', 'local_spotaward')
         );
     }
 }
@@ -436,6 +491,17 @@ if (!empty($actionbuttons)) {
     ]);
 }
 
+if ($canreassign) {
+    echo html_writer::div(
+        html_writer::link(
+            new moodle_url('/local/spotaward/submission.php', ['id' => $id, 'action' => 'reassign']),
+            get_string('reassignnomination', 'local_spotaward'),
+            ['class' => 'btn btn-secondary mb-3']
+        ),
+        'spotaward-reassign-action'
+    );
+}
+
 if ($rejectionform) {
     echo html_writer::start_div('spotaward-card');
     echo html_writer::start_div('spotaward-card-header');
@@ -473,6 +539,16 @@ if ($closerecordform) {
     echo html_writer::end_div();
     echo html_writer::start_div('spotaward-card-body');
     $closerecordform->display();
+    echo html_writer::end_div();
+    echo html_writer::end_div();
+}
+if ($reassignform) {
+    echo html_writer::start_div('spotaward-card');
+    echo html_writer::start_div('spotaward-card-header');
+    echo html_writer::tag('h4', get_string('reassignnomination', 'local_spotaward'));
+    echo html_writer::end_div();
+    echo html_writer::start_div('spotaward-card-body');
+    $reassignform->display();
     echo html_writer::end_div();
     echo html_writer::end_div();
 }

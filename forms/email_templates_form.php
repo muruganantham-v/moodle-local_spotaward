@@ -118,6 +118,18 @@ final class email_templates_form extends moodleform {
                 ],
             ],
             [
+                'group' => 'reassignment',
+                'subject' => 'reassignment_subject',
+                'body' => 'reassignment_body',
+                'subject_default' => 'reassignment_subject_default',
+                'body_default' => 'reassignment_body_default',
+                'placeholders' => [
+                    'recipient_name', 'assignment_role', 'previous_assignee', 'assigned_by',
+                    'course', 'module', 'professional', 'mentor_name', 'program_manager_name',
+                    'maac_executive_name', 'total_students', 'moodle_link',
+                ],
+            ],
+            [
                 'group' => 'certificate',
                 'subject' => 'student_certificate_subject',
                 'body' => 'student_certificate_body',

@@ -1638,6 +1638,136 @@ final class api {
     }
 
     /**
+     * Reassign Program Manager and/or MAAC Executive for a nomination.
+     *
+     * @param int $nominationid
+     * @param int $actorid
+     * @param int $programmanagerid
+     * @param int $maacexecutiveid
+     * @return array
+     */
+    public static function reassign_nomination_role(int $nominationid, int $actorid, int $programmanagerid,
+            int $maacexecutiveid): array {
+        global $DB;
+
+        $nomination = self::get_nomination($nominationid);
+        if (!in_array($nomination->status, ['pending', 'ssteamprogress'], true)) {
+            throw new moodle_exception('invalidparameter');
+        }
+
+        if (!is_siteadmin($actorid) && !self::is_assigned_maac_executive($nomination, $actorid)) {
+            throw new moodle_exception('notauthorised', 'local_spotaward');
+        }
+
+        $validprogrammanagers = [];
+        foreach (self::get_program_managers_for_course((int)$nomination->courseid) as $user) {
+            $validprogrammanagers[(int)$user->id] = $user;
+        }
+        if (empty($validprogrammanagers[$programmanagerid])) {
+            throw new moodle_exception('invalidprogrammanager', 'local_spotaward');
+        }
+
+        $validmaacexecutives = [];
+        foreach (self::get_maac_executives_for_course((int)$nomination->courseid) as $user) {
+            $validmaacexecutives[(int)$user->id] = $user;
+        }
+        if (empty($validmaacexecutives[$maacexecutiveid])) {
+            throw new moodle_exception('invalidmaacexecutive', 'local_spotaward');
+        }
+
+        $changes = [];
+        if ((int)$nomination->programmanagerid !== $programmanagerid) {
+            $changes[] = [
+                'field' => 'programmanagerid',
+                'label' => get_string('programmanager', 'local_spotaward'),
+                'previousid' => (int)$nomination->programmanagerid,
+                'nextid' => $programmanagerid,
+                'recipient' => $validprogrammanagers[$programmanagerid],
+            ];
+        }
+        if ((int)$nomination->maacexecutiveid !== $maacexecutiveid) {
+            $changes[] = [
+                'field' => 'maacexecutiveid',
+                'label' => get_string('maacexecutive', 'local_spotaward'),
+                'previousid' => (int)$nomination->maacexecutiveid,
+                'nextid' => $maacexecutiveid,
+                'recipient' => $validmaacexecutives[$maacexecutiveid],
+            ];
+        }
+
+        if (empty($changes)) {
+            throw new moodle_exception('reassignnominationnochange', 'local_spotaward');
+        }
+
+        $updaterecord = (object)[
+            'id' => $nominationid,
+            'timemodified' => time(),
+        ];
+        foreach ($changes as $change) {
+            $updaterecord->{$change['field']} = $change['nextid'];
+        }
+        $DB->update_record('spotaward_nominations', $updaterecord);
+        unset(self::$nominationcache[$nominationid]);
+
+        foreach ($changes as $change) {
+            $previoususer = !empty($change['previousid']) ? core_user::get_user((int)$change['previousid']) : null;
+            $previousname = $previoususer ? fullname($previoususer) : get_string('notassigned', 'local_spotaward');
+            $nextname = fullname($change['recipient']);
+
+            $DB->insert_record('spotaward_status_track', (object)[
+                'nominationid' => $nominationid,
+                'nominationitemid' => 0,
+                'actorid' => $actorid,
+                'fromstatus' => $nomination->status,
+                'tostatus' => $nomination->status,
+                'reason' => $change['label'] . ': ' . $previousname . ' -> ' . $nextname,
+                'timecreated' => time(),
+            ]);
+
+            self::send_nomination_reassignment_notification(
+                $nominationid,
+                $change['recipient'],
+                $change['label'],
+                $previousname,
+                $actorid
+            );
+        }
+
+        return $changes;
+    }
+
+    /**
+     * Send a reassignment notification to the newly assigned user.
+     *
+     * @param int $nominationid
+     * @param stdClass $recipient
+     * @param string $rolelabel
+     * @param string $previousassignee
+     * @param int $actorid
+     * @return void
+     */
+    private static function send_nomination_reassignment_notification(int $nominationid, stdClass $recipient,
+            string $rolelabel, string $previousassignee, int $actorid): void {
+        if (empty($recipient->email)) {
+            return;
+        }
+
+        $actor = core_user::get_user($actorid);
+        self::send_configured_notification(
+            [$recipient],
+            'reassignment_subject',
+            'reassignment_body',
+            'reassignment_subject_default',
+            'reassignment_body_default',
+            self::build_nomination_email_data($nominationid, [
+                'assignment_role' => $rolelabel,
+                'previous_assignee' => $previousassignee,
+                'assigned_by' => $actor ? fullname($actor) : '',
+            ])
+        );
+    }
+
+    /**
      * Send notification from configured template fields.
      *
      * @param array $recipients
