@@ -1113,6 +1113,9 @@ function local_spotaward_render_data_table(array $columns, array $rows, array $o
     if (!empty($options['downloadpdflabel'])) {
         $rootattrs['data-download-pdf-label'] = $options['downloadpdflabel'];
     }
+    if (!empty($options['downloadcsvurl'])) {
+        $rootattrs['data-download-csv-url'] = $options['downloadcsvurl'];
+    }
 
     return html_writer::div(
         $toolbar .

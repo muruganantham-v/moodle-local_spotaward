@@ -767,6 +767,7 @@ echo local_spotaward_render_data_table($columns, $rows, [
     'searchplaceholder' => 'name, email, admission id',
     'downloadpdfurl' => (new moodle_url('/local/spotaward/download_details.php', ['id' => $id]))->out(false),
     'downloadpdflabel' => 'Download Student details',
+    'downloadcsvurl' => (new moodle_url('/local/spotaward/download_csv.php', ['id' => $id]))->out(false),
 ]);
 if ($showpmreviewbulkactions || $showbulkcertificateactions) {
     echo html_writer::end_tag('form');
