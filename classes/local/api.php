@@ -4657,8 +4657,8 @@ final class api {
             return [
                 'quality' => 64,
                 'maxlongedge' => 1280,
-                'dpi' => 60,
-                'imgdpi' => 60,
+                'dpi' => 96,
+                'imgdpi' => 96,
                 'pdfjpegquality' => 42,
             ];
         }
@@ -4666,8 +4666,8 @@ final class api {
         return [
             'quality' => 78,
             'maxlongedge' => 1800,
-            'dpi' => 72,
-            'imgdpi' => 72,
+            'dpi' => 96,
+            'imgdpi' => 96,
             'pdfjpegquality' => 55,
         ];
     }
