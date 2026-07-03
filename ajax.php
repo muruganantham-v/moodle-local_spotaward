@@ -91,6 +91,25 @@ if (!api::user_can_access($USER->id)) {
     die();
 }
 
+if (!is_siteadmin() && !api::is_manager($USER->id) && !api::is_ss_team($USER->id)) {
+    $coursecontext = context_course::instance($courseid);
+    $canaccess = api::can_nominate_in_course($USER->id, $courseid) ||
+                 has_capability('local/spotaward:nominate', $coursecontext) ||
+                 has_capability('local/spotaward:review', $coursecontext);
+
+    if (!$canaccess) {
+        http_response_code(403);
+        echo json_encode([
+            'error' => 'Access denied to this course context',
+            'students' => [],
+            'programmanagers' => [],
+            'maacexecutives' => [],
+            'categories' => []
+        ]);
+        die();
+    }
+}
+
 $students = [];
 foreach (api::get_course_students($courseid, $USER->id) as $student) {
     $name = trim(($student->firstname ?? '') . ' ' . ($student->lastname ?? ''));

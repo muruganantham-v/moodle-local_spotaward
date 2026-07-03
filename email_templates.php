@@ -48,7 +48,7 @@ foreach ($templatefields as $field) {
     foreach (['subject', 'body'] as $type) {
         $key = $field[$type];
         $value = get_config('local_spotaward', $key);
-        if ($value === false || $value === null || $value === '') {
+        if ($value === false || $value === null) {
             $value = get_string($field[$type . '_default'], 'local_spotaward');
         }
         $defaults[$key] = $value;

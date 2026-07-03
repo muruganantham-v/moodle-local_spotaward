@@ -39,8 +39,9 @@ $canreview = is_siteadmin() || ((int)$nomination->programmanagerid === (int)$USE
 $cancontinuereview = $canreview && in_array($nomination->status, ['pending', 'underreview'], true);
 $canmanagerapprove = is_siteadmin() || api::is_manager($USER->id);
 $isssteam = api::is_assigned_maac_executive($nomination, (int)$USER->id);
+$ispm = (int)$nomination->programmanagerid === (int)$USER->id;
 $cansharetoadmin = is_siteadmin() || api::is_ss_team((int)$USER->id);
-$canreassign = (is_siteadmin() || $isssteam) && in_array($nomination->status, ['pending', 'ssteamprogress'], true);
+$canreassign = (is_siteadmin() || $isssteam || $ispm) && in_array($nomination->status, ['pending', 'ssteamprogress'], true);
 $canviewcertificates = ($canmanagerapprove || $isssteam)
     && in_array($nomination->status, ['ssteamprogress', 'closed'], true);
 
@@ -252,6 +253,7 @@ if ($action === 'reassign' && $canreassign) {
         'maacexecutiveoptions' => $maacexecutiveoptions,
         'currentprogrammanagerid' => (int)$nomination->programmanagerid,
         'currentmaacexecutiveid' => (int)$nomination->maacexecutiveid,
+        'userrole' => is_siteadmin($USER->id) ? 'admin' : ($ispm ? 'pm' : ($isssteam ? 'maac' : '')),
     ]);
     $reassignform->set_data([
         'id' => $id,
@@ -763,6 +765,8 @@ echo local_spotaward_render_data_table($columns, $rows, [
     'label' => get_string('studentstatus', 'local_spotaward'),
     'searchlabel' => 'Search student',
     'searchplaceholder' => 'name, email, admission id',
+    'downloadpdfurl' => (new moodle_url('/local/spotaward/download_details.php', ['id' => $id]))->out(false),
+    'downloadpdflabel' => 'Download Student details',
 ]);
 if ($showpmreviewbulkactions || $showbulkcertificateactions) {
     echo html_writer::end_tag('form');

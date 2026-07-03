@@ -43,80 +43,94 @@ function local_spotaward_require_action_success_overlay(): void {
         'if(window.localSpotawardSuccessOverlayReady){return;}window.localSpotawardSuccessOverlayReady=true;' .
         'var css=[' .
         '"body.spotaward-success-busy{overflow:hidden;}",' .
-        '".spotaward-success-overlay{position:fixed;inset:0;background:rgba(0,0,0,.58);display:none;align-items:center;justify-content:center;padding:20px;z-index:99999;}",' .
+        '".spotaward-success-overlay{position:fixed;inset:0;background:rgba(15,23,42,.55);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);display:none;align-items:center;justify-content:center;padding:20px;z-index:99999;}",' .
         '".spotaward-success-overlay.is-open{display:flex;}",' .
-        '".spotaward-success-modal{width:min(420px,100%);background:#fff;border-radius:22px;padding:20px 20px 18px;box-shadow:0 24px 64px rgba(0,0,0,.24);animation:spotawardSuccessPop .32s cubic-bezier(.2,.8,.2,1) forwards;}",' .
-        '".spotaward-success-main{display:flex;align-items:center;gap:18px;text-align:left;}",' .
-        '".spotaward-success-spinner{width:92px;height:92px;flex:0 0 92px;}",' .
+        '".spotaward-success-modal{position:relative;width:min(440px,100%);background:#fff;border-radius:20px;padding:0;box-shadow:0 25px 60px rgba(0,0,0,.18),0 0 0 1px rgba(0,0,0,.04);animation:spotawardSuccessPop .35s cubic-bezier(.2,.8,.2,1) forwards;overflow:hidden;}",' .
+        '".spotaward-success-accent{height:4px;background:linear-gradient(90deg,#1D9E75,#34d399,#1D9E75);background-size:200% 100%;}",' .
+        '".spotaward-success-accent.is-loading{animation:spotawardAccentShimmer 1.5s ease infinite;}",' .
+        '".spotaward-success-accent.is-done{background:linear-gradient(90deg,#1D9E75,#34d399);background-size:100% 100%;animation:none;}",' .
+        '".spotaward-success-inner{padding:28px 28px 22px;}",' .
+        '".spotaward-success-main{display:flex;align-items:center;gap:20px;text-align:left;}",' .
+        '".spotaward-success-spinner{width:72px;height:72px;flex:0 0 72px;}",' .
         '".spotaward-success-content{flex:1;min-width:0;}",' .
-        '".spin-wrap{width:92px;height:92px;}",' .
-        '".spin-svg{width:92px;height:92px;animation:spotawardSuccessSpin .9s linear infinite;}",' .
+        '".spin-wrap{width:72px;height:72px;}",' .
+        '".spin-svg{width:72px;height:72px;animation:spotawardSuccessSpin .9s linear infinite;}",' .
         '".spin-svg.stopped{animation:none;}",' .
-        '".ring-track{fill:none;stroke:#e4e4e4;stroke-width:7;}",' .
-        '".ring-arc{fill:none;stroke:#1D9E75;stroke-width:7;stroke-linecap:round;stroke-dasharray:85 226;transition:stroke .3s,stroke-dasharray .45s ease,stroke-linecap .1s;}",' .
+        '".ring-track{fill:none;stroke:#e2e8f0;stroke-width:5;}",' .
+        '".ring-arc{fill:none;stroke:#1D9E75;stroke-width:5;stroke-linecap:round;stroke-dasharray:85 226;transition:stroke .3s,stroke-dasharray .45s ease,stroke-linecap .1s;}",' .
         '".ring-arc.full-green{stroke:#1D9E75;stroke-dasharray:400 0;stroke-linecap:butt;}",' .
-        '".tick-path{fill:none;stroke:#1D9E75;stroke-width:7;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:62;stroke-dashoffset:62;transition:stroke-dashoffset .45s ease .2s;}",' .
+        '".tick-path{fill:none;stroke:#1D9E75;stroke-width:5;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:62;stroke-dashoffset:62;transition:stroke-dashoffset .45s ease .2s;}",' .
         '".tick-path.drawn{stroke-dashoffset:0;}",' .
-        '".spotaward-success-title{margin:0;font-size:22px;font-weight:700;color:#10212b;transition:color .25s ease;}",' .
+        '".spotaward-success-title{margin:0;font-size:18px;font-weight:700;color:#1e293b;letter-spacing:-0.01em;transition:color .25s ease;}",' .
         '".spotaward-success-title.is-done{color:#1D9E75;}",' .
-        '".spotaward-success-subtitle{margin:6px 0 0;font-size:15px;color:#6c7b88;font-weight:500;}",' .
-        '".spotaward-success-close{position:absolute;top:10px;right:10px;width:34px;height:34px;border:0;border-radius:999px;background:#f4f6f8;color:#51606d;font-size:20px;line-height:1;cursor:pointer;}",' .
-        '".spotaward-success-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:18px;}",' .
-        '".spotaward-success-actions .btn{min-width:90px;}",' .
+        '".spotaward-success-subtitle{margin:6px 0 0;font-size:13px;color:#94a3b8;font-weight:500;}",' .
+        '".spotaward-success-close{position:absolute;top:14px;right:14px;width:32px;height:32px;border:0;border-radius:10px;background:#f1f5f9;color:#64748b;font-size:18px;line-height:1;cursor:pointer;transition:all .15s ease;display:flex;align-items:center;justify-content:center;z-index:1;}",' .
+        '".spotaward-success-close:hover{background:#e2e8f0;color:#334155;}",' .
+        '".spotaward-success-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:20px;padding-top:16px;border-top:1px solid #f1f5f9;}",' .
+        '".spotaward-success-actions .btn{min-width:90px;border-radius:10px;font-weight:600;font-size:13px;padding:8px 18px;}",' .
         '"@keyframes spotawardSuccessSpin{to{transform:rotate(360deg);}}",' .
-        '"@keyframes spotawardSuccessPop{from{opacity:0;transform:scale(.92) translateY(14px);}to{opacity:1;transform:scale(1) translateY(0);}}"' .
+        '"@keyframes spotawardSuccessPop{from{opacity:0;transform:scale(.94) translateY(12px);}to{opacity:1;transform:scale(1) translateY(0);}}",' .
+        '"@keyframes spotawardAccentShimmer{0%{background-position:200% 0;}100%{background-position:-200% 0;}}"' .
         '].join("");' .
         'var style=document.createElement("style");style.textContent=css;document.head.appendChild(style);' .
         'var overlay=document.createElement("div");overlay.className="spotaward-success-overlay";' .
         'overlay.innerHTML=' . json_encode(
             '<div class="spotaward-success-modal" role="dialog" aria-modal="true" aria-labelledby="spotaward-success-inline-title">' .
+                '<div class="spotaward-success-accent is-loading" id="spotaward-success-accent"></div>' .
                 '<button type="button" class="spotaward-success-close" data-spotaward-success-close="1" aria-label="' . s($close) . '">&times;</button>' .
-                '<div class="spotaward-success-main">' .
-                    '<div class="spotaward-success-spinner">' .
-                        '<div class="spin-wrap">' .
-                            '<svg id="spotaward-inline-spin" class="spin-svg" viewBox="0 0 88 88" xmlns="http://www.w3.org/2000/svg">' .
-                                '<circle class="ring-track" cx="44" cy="44" r="36"></circle>' .
-                                '<circle id="spotaward-inline-ring" class="ring-arc" cx="44" cy="44" r="36" transform="rotate(-90 44 44)"></circle>' .
-                                '<path id="spotaward-inline-tick" class="tick-path" d="M26 45 L37 56 L62 31"></path>' .
-                            '</svg>' .
+                '<div class="spotaward-success-inner">' .
+                    '<div class="spotaward-success-main">' .
+                        '<div class="spotaward-success-spinner">' .
+                            '<div class="spin-wrap">' .
+                                '<svg id="spotaward-inline-spin" class="spin-svg" viewBox="0 0 88 88" xmlns="http://www.w3.org/2000/svg">' .
+                                    '<circle class="ring-track" cx="44" cy="44" r="36"></circle>' .
+                                    '<circle id="spotaward-inline-ring" class="ring-arc" cx="44" cy="44" r="36" transform="rotate(-90 44 44)"></circle>' .
+                                    '<path id="spotaward-inline-tick" class="tick-path" d="M26 45 L37 56 L62 31"></path>' .
+                                '</svg>' .
+                            '</div>' .
+                        '</div>' .
+                        '<div class="spotaward-success-content">' .
+                            '<h2 class="spotaward-success-title" id="spotaward-success-inline-title">' . s($title) . '</h2>' .
+                            '<p class="spotaward-success-subtitle">' . s($subtitle) . '</p>' .
                         '</div>' .
                     '</div>' .
-                    '<div class="spotaward-success-content">' .
-                        '<h2 class="spotaward-success-title" id="spotaward-success-inline-title">' . s($title) . '</h2>' .
-                        '<p class="spotaward-success-subtitle">' . s($subtitle) . '</p>' .
+                    '<div class="spotaward-success-actions">' .
+                        '<button type="button" class="btn btn-secondary" data-spotaward-success-close="1">' . s($cancel) . '</button>' .
                     '</div>' .
-                '</div>' .
-                '<div class="spotaward-success-actions">' .
-                    '<button type="button" class="btn btn-secondary" data-spotaward-success-close="1">' . s($cancel) . '</button>' .
                 '</div>' .
             '</div>'
         ) . ';' .
         'document.body.appendChild(overlay);' .
         'var spin=document.getElementById("spotaward-inline-spin");var ring=document.getElementById("spotaward-inline-ring");var tick=document.getElementById("spotaward-inline-tick");' .
+        'var accentBar=document.getElementById("spotaward-success-accent");' .
         'var titleEl=document.getElementById("spotaward-success-inline-title");var subtitleEl=overlay.querySelector(".spotaward-success-subtitle");' .
         'var open=false;' .
-        'function normaliseActionText(text){return String(text||"").replace(/\s+/g," ").trim().toLowerCase();}' .
+        'function normaliseActionText(text){return String(text||"").replace(/\\s+/g," ").trim().toLowerCase();}' .
         'function getActionMessages(text){var key=normaliseActionText(text);var map={' .
-            '"submit":{progress:"Submitting nomination...",success:"Nomination successfully submitted"},' .
-            '"approve all":{progress:"Approving all nominations...",success:"All nominations successfully approved"},' .
-            '"approve":{progress:"Approving nomination...",success:"Nomination successfully approved"},' .
-            '"save rejection":{progress:"Saving rejection...",success:"Rejection successfully saved"},' .
+            '"submit":{progress:"Submitting nomination...",success:"Nomination submitted successfully"},' .
+            '"approve all":{progress:"Approving all students...",success:"All students approved successfully"},' .
+            '"approve":{progress:"Approving student...",success:"Student approved successfully"},' .
+            '"approve selected":{progress:"Approving selected students...",success:"Selected students approved successfully"},' .
+            '"save rejection":{progress:"Saving rejection...",success:"Rejection saved successfully"},' .
+            '"reject selected":{progress:"Rejecting selected students...",success:"Selected students rejected successfully"},' .
             '"share to admin":{progress:"Opening share to admin...",success:"Ready to share to admin"},' .
             '"send to admin":{progress:"Sharing to admin...",success:"Successfully shared to admin"},' .
-            '"share certificate to students":{progress:"Sharing certificates to students...",success:"Certificates successfully shared to students"},' .
-            '"share certificate to selected student":{progress:"Sharing certificate to selected student...",success:"Certificate shared to selected student"},' .
-            '"re-generate certificate":{progress:"Re-generating certificate...",success:"Re-generated certificate"},' .
-            '"distributed":{progress:"Opening distribution form...",success:"Distribution form ready"},' .
-            '"close ticket":{progress:"Closing ticket...",success:"Ticket successfully closed"},' .
-            '"submitbutton":{progress:"Processing request...",success:' . json_encode($title) . '},' .
-            '"save changes":{progress:"Saving changes...",success:"Changes successfully saved"},' .
-            '"delete":{progress:"Deleting nomination...",success:"Nomination successfully deleted"}' .
-        '};return map[key]||{progress:"Processing request...",success:' . json_encode($title) . '};}' .
+            '"share certificate to students":{progress:"Sharing certificates to students...",success:"Certificates shared to students successfully"},' .
+            '"share certificate to selected student":{progress:"Sharing certificate to student...",success:"Certificate shared to student successfully"},' .
+            '"re-generate certificate":{progress:"Re-generating certificate...",success:"Certificate re-generated successfully"},' .
+            '"distributed":{progress:"Opening close record form...",success:"Close record form ready"},' .
+            '"close record":{progress:"Closing nomination...",success:"Nomination closed successfully"},' .
+            '"close ticket":{progress:"Closing ticket...",success:"Ticket closed successfully"},' .
+            '"save reassignment":{progress:"Reassigning nomination...",success:"Nomination reassigned successfully"},' .
+            '"save changes":{progress:"Saving changes...",success:"Changes saved successfully"},' .
+            '"delete":{progress:"Deleting nomination...",success:"Nomination deleted successfully"},' .
+            '"submitbutton":{progress:"Processing...",success:' . json_encode($title) . '}' .
+        '};return map[key]||{progress:"Processing...",success:' . json_encode($title) . '};}' .
         'function getElementMessages(el){if(!el){return null;}var progress=el.getAttribute("data-spotaward-progress-message");var success=el.getAttribute("data-spotaward-success-message");if(progress&&success){return{progress:progress,success:success};}return null;}' .
-        'function getElementActionText(el){if(!el){return "";}if(typeof el.value==="string"&&el.value.trim()!==""){return el.value;}return String(el.textContent||"").replace(/\s+/g," ").trim();}' .
+        'function getElementActionText(el){if(!el){return "";}if(typeof el.value==="string"&&el.value.trim()!==""){return el.value;}return String(el.textContent||"").replace(/\\s+/g," ").trim();}' .
         'overlay.addEventListener("click",function(e){if(e.target.closest("[data-spotaward-success-close]")){overlay.classList.remove("is-open");document.body.classList.remove("spotaward-success-busy");}});' .
         'function shouldStartForSubmitter(submitter){if(!submitter){return false;}var name=String(submitter.name||"");if(name==="previewdraft"||name==="cleardraft"){return false;}if(name==="submitnominations"||name==="submitbutton"){return true;}var id=String(submitter.id||"");if(id==="id_submitbutton"){return true;}return submitter.hasAttribute("data-spotaward-success-submit");}' .
-        'function startOverlay(actionText, explicitMessages){if(open){return;}open=true;var messages=explicitMessages||getActionMessages(actionText);document.body.classList.add("spotaward-success-busy");overlay.classList.add("is-open");if(titleEl){titleEl.textContent=messages.progress;titleEl.classList.remove("is-done");}if(subtitleEl){subtitleEl.textContent="Please wait...";}if(spin){spin.className="spin-svg";}if(ring){ring.className="ring-arc";}if(tick){tick.className="tick-path";}window.setTimeout(function(){if(spin){spin.classList.add("stopped");}if(ring){ring.classList.add("full-green");}},850);window.setTimeout(function(){if(tick){tick.classList.add("drawn");}if(titleEl){titleEl.textContent=messages.success;titleEl.classList.add("is-done");}if(subtitleEl){subtitleEl.textContent=' . json_encode($subtitle) . ';}},1150);}' .
+        'function startOverlay(actionText, explicitMessages){if(open){return;}open=true;var messages=explicitMessages||getActionMessages(actionText);document.body.classList.add("spotaward-success-busy");overlay.classList.add("is-open");if(accentBar){accentBar.className="spotaward-success-accent is-loading";}if(titleEl){titleEl.textContent=messages.progress;titleEl.classList.remove("is-done");}if(subtitleEl){subtitleEl.textContent="Please wait...";}if(spin){spin.className="spin-svg";}if(ring){ring.className="ring-arc";}if(tick){tick.className="tick-path";}window.setTimeout(function(){if(spin){spin.classList.add("stopped");}if(ring){ring.classList.add("full-green");}},850);window.setTimeout(function(){if(tick){tick.classList.add("drawn");}if(accentBar){accentBar.className="spotaward-success-accent is-done";}if(titleEl){titleEl.textContent=messages.success;titleEl.classList.add("is-done");}if(subtitleEl){subtitleEl.textContent=' . json_encode($subtitle) . ';}},1150);}' .
         'document.addEventListener("submit",function(e){var submitter=e.submitter;if(submitter&&submitter.name&&submitter.name.toLowerCase().indexOf("cancel")!==-1){return;}if(!shouldStartForSubmitter(submitter)){return;}startOverlay(getElementActionText(submitter),getElementMessages(submitter));},true);' .
         'document.addEventListener("click",function(e){var link=e.target.closest("a[data-spotaward-success]");if(!link||link.target==="_blank"||e.defaultPrevented){return;}startOverlay(getElementActionText(link),getElementMessages(link));},false);' .
         'window.localSpotawardStartSuccessOverlay=startOverlay;' .
@@ -1091,6 +1105,13 @@ function local_spotaward_render_data_table(array $columns, array $rows, array $o
 
     if (!empty($options['noclear'])) {
         $rootattrs['data-table-noclear'] = '1';
+    }
+
+    if (!empty($options['downloadpdfurl'])) {
+        $rootattrs['data-download-pdf-url'] = $options['downloadpdfurl'];
+    }
+    if (!empty($options['downloadpdflabel'])) {
+        $rootattrs['data-download-pdf-label'] = $options['downloadpdflabel'];
     }
 
     return html_writer::div(

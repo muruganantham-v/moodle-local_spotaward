@@ -40,7 +40,10 @@ final class share_admin_form extends moodleform {
         $buttons = '<div class="spotaward-action-buttons spotaward-secondary-actions d-flex flex-wrap align-items-center">';
         $buttons .= '<span data-fieldtype="submit">';
         $buttons .= '<input type="submit" class="btn btn-primary" name="submitbutton" id="id_submitbutton" value="' .
-            s(get_string('sendtoadmin', 'local_spotaward')) . '">';
+            s(get_string('sendtoadmin', 'local_spotaward')) . '"' .
+            ' data-spotaward-progress-message="Sharing to admin..."' .
+            ' data-spotaward-success-message="Successfully shared to admin"' .
+            ' data-spotaward-success-submit="1">';
         $buttons .= '</span>';
         $buttons .= '<span data-fieldtype="button">';
         $buttons .= '<a class="btn btn-secondary" id="id_cancel" href="' . s($returnurl) . '">' .

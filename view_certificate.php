@@ -71,7 +71,12 @@ if ($userid > 0) {
         throw new moodle_exception('certificatenotfound', 'local_spotaward');
     }
 
-    $content = $file->get_content();
+    send_stored_file($file, 0, 0, true, [
+        'filename' => $filename,
+        'dontclose' => false,
+        'display' => $action === 'download' ? 'attachment' : 'inline'
+    ]);
+    exit;
 } else {
     $filename = "Spot_Award_Certificates_{$nominationid}.pdf";
 
@@ -82,28 +87,30 @@ if ($userid > 0) {
     }
 
     $content = local_spotaward\local\api::merge_stored_pdf_files($files, $filename);
-}
 
-if ($action === 'download') {
-    header('Content-Type: application/pdf');
-    header('Content-Disposition: attachment; filename="' . $filename . '"');
-    header('Cache-Control: public, must-revalidate, max-age=0');
-    header('Pragma: public');
-    header('Expires: Sat, 26 Jul 1997 05:00:00 GMT');
-    header('Last-Modified: ' . gmdate('D, d M Y H:i:s') . ' GMT');
-    header('Content-Description: File Transfer');
-    header('Content-Transfer-Encoding: binary');
-    header('Content-Length: ' . strlen($content));
-} else {
-    header('Content-Type: application/pdf');
-    header('Content-disposition: inline; filename="' . $filename . '"');
-    header('Cache-Control: public, must-revalidate, max-age=0');
-    header('Pragma: public');
-    header('Expires: Sat, 26 Jul 1997 05:00:00 GMT');
-    header('Last-Modified: ' . gmdate('D, d M Y H:i:s') . ' GMT');
-    header('Content-Length: ' . strlen($content));
-}
+    if ($action === 'download') {
+        header('Content-Type: application/pdf');
+        header('Content-Disposition: attachment; filename="' . $filename . '"');
+        header('Cache-Control: public, must-revalidate, max-age=0');
+        header('Pragma: public');
+        header('Expires: Sat, 26 Jul 1997 05:00:00 GMT');
+        header('Last-Modified: ' . gmdate('D, d M Y H:i:s') . ' GMT');
+        header('Content-Description: File Transfer');
+        header('Content-Transfer-Encoding: binary');
+        header('Content-Length: ' . strlen($content));
+    } else {
+        header('Content-Type: application/pdf');
+        header('Content-disposition: inline; filename="' . $filename . '"');
+        header('Cache-Control: public, must-revalidate, max-age=0');
+        header('Pragma: public');
+        header('Expires: Sat, 26 Jul 1997 05:00:00 GMT');
+        header('Last-Modified: ' . gmdate('D, d M Y H:i:s') . ' GMT');
+        header('Content-Length: ' . strlen($content));
+    }
 
-ob_clean();
-echo $content;
-die();
+    while (ob_get_level()) {
+        ob_end_clean();
+    }
+    echo $content;
+    die();
+}

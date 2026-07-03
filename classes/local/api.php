@@ -306,8 +306,20 @@ final class api {
         }
 
         if (is_siteadmin($userid)) {
-            $records = $DB->get_records_select('course', 'id <> :sitecourse', ['sitecourse' => SITEID], 'fullname ASC',
-                'id, shortname, fullname');
+            $prefixes = constants::nomination_course_shortname_prefixes();
+            if (empty($prefixes)) {
+                return $cache[$userid] = [];
+            }
+            $likes = [];
+            $params = ['sitecourse' => SITEID];
+            $i = 0;
+            foreach ($prefixes as $prefix) {
+                $paramname = 'prefix' . $i++;
+                $likes[] = $DB->sql_like('shortname', ':' . $paramname, false);
+                $params[$paramname] = $prefix . '%';
+            }
+            $sql = 'id <> :sitecourse AND (' . implode(' OR ', $likes) . ')';
+            $records = $DB->get_records_select('course', $sql, $params, 'fullname ASC', 'id, shortname, fullname');
             $options = [];
             foreach ($records as $record) {
                 if (!constants::is_allowed_nomination_course_shortname((string)($record->shortname ?? ''))) {
@@ -1645,8 +1657,20 @@ final class api {
             throw new moodle_exception('invalidparameter');
         }
 
-        if (!is_siteadmin($actorid) && !self::is_assigned_maac_executive($nomination, $actorid)) {
+        $isassignedpm = (int)$nomination->programmanagerid === $actorid;
+        $isassignedmaac = self::is_assigned_maac_executive($nomination, $actorid);
+
+        if (!is_siteadmin($actorid) && !$isassignedmaac && !$isassignedpm) {
             throw new moodle_exception('notauthorised', 'local_spotaward');
+        }
+
+        if (!is_siteadmin($actorid)) {
+            if ($isassignedpm && (int)$nomination->maacexecutiveid !== $maacexecutiveid) {
+                throw new moodle_exception('notauthorised', 'local_spotaward');
+            }
+            if ($isassignedmaac && (int)$nomination->programmanagerid !== $programmanagerid) {
+                throw new moodle_exception('notauthorised', 'local_spotaward');
+            }
         }
 
         $validprogrammanagers = [];
@@ -1940,10 +1964,12 @@ final class api {
      * @return string
      */
     private static function render_notification_template(string $template, stdClass $data): string {
+        global $CFG;
         $replacements = [];
         foreach (get_object_vars($data) as $key => $value) {
             $replacements['{{' . $key . '}}'] = (string)$value;
         }
+        $replacements['{{logo_url}}'] = $CFG->wwwroot . '/local/spotaward/pix/emertxe_logo.png';
 
         return strtr($template, $replacements);
     }
@@ -5223,15 +5249,41 @@ final class api {
             return $cache;
         }
 
-        $records = $DB->get_records_select('course', 'id <> :sitecourse', ['sitecourse' => SITEID], 'fullname ASC',
-            'id, shortname, fullname');
+        $prefixes = [
+            'ADVC102', 'DS104', 'MC105', 'LI106', 'ECIP-GW_IOT_PROTOCOL102',
+            'ECIP-PYTHON', 'ECIP-ARDUINO', 'ECEP-ELARM', 'IOTCLOUD', 'LS101',
+            'CPP103', 'QT107'
+        ];
+
+        $likes = [];
+        $params = ['sitecourse' => SITEID];
+        $i = 0;
+        foreach ($prefixes as $prefix) {
+            $paramname = 'prefix' . $i++;
+            $likes[] = $DB->sql_like('shortname', ':' . $paramname, false);
+            $params[$paramname] = $prefix . '%';
+        }
+
+        $namekeywords = [
+            'advance%c programming', 'data structure', 'dsa', 'microcontroller',
+            'linux internals', 'python programming', 'arduino', 'embedded linux',
+            'elarm', 'linux systems', 'c++ programming', 'cpp programming',
+            'qt programming', 'iot%gateway', 'iot%cloud'
+        ];
+        foreach ($namekeywords as $keyword) {
+            $paramname = 'keyword' . $i++;
+            $likes[] = $DB->sql_like('fullname', ':' . $paramname, false);
+            $params[$paramname] = '%' . $keyword . '%';
+        }
+
+        $sql = 'id <> :sitecourse AND (' . implode(' OR ', $likes) . ')';
+        $records = $DB->get_records_select('course', $sql, $params, 'fullname ASC', 'id, shortname, fullname');
 
         $courses = [];
         foreach ($records as $record) {
             if (self::get_report_course_profile($record) === null) {
                 continue;
             }
-
             $courses[$record->id] = format_string($record->fullname, true, ['context' => context_course::instance($record->id)]);
         }
 
@@ -5526,84 +5578,7 @@ final class api {
         return $grades;
     }
 
-    /**
-     * Load attendance percentages by attendance instance and student.
-     *
-     * @param int $courseid
-     * @param array $activities
-     * @param array $studentids
-     * @return array
-     */
-    private static function get_attendance_report_map(int $courseid, array $activities, array $studentids): array {
-        global $DB;
 
-        if (empty($activities) || empty($studentids) ||
-            !self::table_has_field('attendance', 'id') ||
-            !self::table_has_field('attendance', 'course') ||
-            !self::table_has_field('attendance_sessions', 'attendanceid') ||
-            !self::table_has_field('attendance_log', 'sessionid') ||
-            !self::table_has_field('attendance_log', 'studentid')) {
-            return [];
-        }
-
-        $attendanceids = [];
-        foreach ($activities as $activity) {
-            if ($activity['module'] === 'attendance') {
-                $attendanceids[] = (int)$activity['iteminstance'];
-            }
-        }
-
-        if (empty($attendanceids)) {
-            return [];
-        }
-
-        [$attsql, $attparams] = $DB->get_in_or_equal($attendanceids, SQL_PARAMS_NAMED, 'at');
-        [$usersql, $userparams] = $DB->get_in_or_equal($studentids, SQL_PARAMS_NAMED, 'au');
-
-        $totalsql = "SELECT a.id AS attendanceid, COUNT(1) AS totalsessions
-                       FROM {attendance_sessions} s
-                       JOIN {attendance} a ON a.id = s.attendanceid
-                      WHERE a.course = :courseid
-                        AND a.id $attsql
-                   GROUP BY a.id";
-        $totalrecords = $DB->get_records_sql($totalsql, ['courseid' => $courseid] + $attparams);
-
-        $countsql = "SELECT a.id AS attendanceid, al.studentid, COUNT(DISTINCT al.sessionid) AS attended
-                       FROM {attendance_log} al
-                       JOIN {attendance_sessions} s ON s.id = al.sessionid
-                       JOIN {attendance} a ON a.id = s.attendanceid
-                      WHERE a.course = :courseid
-                        AND a.id $attsql
-                        AND al.studentid $usersql
-                   GROUP BY a.id, al.studentid";
-
-        $attendedcounts = [];
-        $recordset = $DB->get_recordset_sql($countsql, ['courseid' => $courseid] + $attparams + $userparams);
-        foreach ($recordset as $record) {
-            $attendedcounts[(int)$record->attendanceid][(int)$record->studentid] = (int)$record->attended;
-        }
-        $recordset->close();
-
-        $percentages = [];
-        foreach ($totalrecords as $record) {
-            $attendanceid = (int)$record->attendanceid;
-            $totalsessions = (int)$record->totalsessions;
-            if ($totalsessions <= 0) {
-                continue;
-            }
-
-            foreach ($studentids as $studentid) {
-                $attended = $attendedcounts[$attendanceid][$studentid] ?? 0;
-                $percentages[$attendanceid][$studentid] = [
-                    'attended' => $attended,
-                    'total' => $totalsessions,
-                    'percentage' => round(($attended / $totalsessions) * 100, 2) . '%',
-                ];
-            }
-        }
-
-        return $percentages;
-    }
 
     /**
      * Build grouped summary rows by student.
@@ -5951,20 +5926,18 @@ final class api {
         global $DB;
 
         $sql = "SELECT n.*, c.fullname AS coursename, u.firstname AS pmfirstname, u.lastname AS pmlastname,
-                       COALESCE(ni_agg.totalitems, 0) AS totalitems,
-                       COALESCE(ni_agg.approveditems, 0) AS approveditems,
-                       COALESCE(ni_agg.rejecteditems, 0) AS rejecteditems
+                       (SELECT COUNT(1)
+                          FROM {spotaward_nomination_items} ni
+                         WHERE ni.nominationid = n.id) AS totalitems,
+                       COALESCE((SELECT SUM(CASE WHEN ni.status = 'ssteamprogress' THEN 1 ELSE 0 END)
+                          FROM {spotaward_nomination_items} ni
+                         WHERE ni.nominationid = n.id), 0) AS approveditems,
+                       COALESCE((SELECT SUM(CASE WHEN ni.status = 'rejected' THEN 1 ELSE 0 END)
+                          FROM {spotaward_nomination_items} ni
+                         WHERE ni.nominationid = n.id), 0) AS rejecteditems
                   FROM {spotaward_nominations} n
                   JOIN {course} c ON c.id = n.courseid
              LEFT JOIN {user} u ON u.id = n.programmanagerid
-             LEFT JOIN (
-                       SELECT nominationid,
-                              COUNT(*) AS totalitems,
-                              SUM(CASE WHEN status = 'ssteamprogress' THEN 1 ELSE 0 END) AS approveditems,
-                              SUM(CASE WHEN status = 'rejected' THEN 1 ELSE 0 END) AS rejecteditems
-                         FROM {spotaward_nomination_items}
-                     GROUP BY nominationid
-                       ) ni_agg ON ni_agg.nominationid = n.id
                   WHERE n.nominatorid = :userid
                ORDER BY n.timecreated DESC";
 
@@ -6003,8 +5976,6 @@ final class api {
         $syscontextid = \context_system::instance()->id;
         $params = ['userid' => $userid, 'syscontextid' => $syscontextid];
         $where = "n.programmanagerid = :userid";
-        $itemaggjoin = self::get_nomination_item_aggregate_join_sql();
-        $fileaggjoin = self::get_certificate_file_aggregate_join_sql();
 
         if ($statusfilter === 'active') {
             $where .= " AND n.status IN ('pending', 'ssteamprogress')";
@@ -6015,15 +5986,23 @@ final class api {
         $sql = "SELECT n.*, c.fullname AS coursename,
                        u.firstname, u.lastname,
                        maac.firstname AS maacfirstname, maac.lastname AS maaclastname,
-                       COALESCE(ni_agg.totalitems, 0) AS totalitems,
-                       COALESCE(ni_agg.revieweditems, 0) AS revieweditems,
-                       COALESCE(cert_agg.certificatesexist, 0) AS certificatesexist
+                       (SELECT COUNT(1)
+                          FROM {spotaward_nomination_items} ni
+                         WHERE ni.nominationid = n.id) AS totalitems,
+                       COALESCE((SELECT SUM(CASE WHEN ni.status IN ('ssteamprogress', 'rejected', 'closed') THEN 1 ELSE 0 END)
+                          FROM {spotaward_nomination_items} ni
+                         WHERE ni.nominationid = n.id), 0) AS revieweditems,
+                       (SELECT COUNT(1)
+                          FROM {files} f
+                         WHERE f.contextid = :syscontextid
+                           AND f.component = 'local_spotaward'
+                           AND f.filearea = 'certificates'
+                           AND f.itemid = n.id
+                           AND f.filename <> '.') AS certificatesexist
                   FROM {spotaward_nominations} n
                   JOIN {course} c ON c.id = n.courseid
                   JOIN {user} u ON u.id = n.nominatorid
              LEFT JOIN {user} maac ON maac.id = n.maacexecutiveid
-                  {$itemaggjoin}
-                  {$fileaggjoin}
                  WHERE {$where}
                ORDER BY n.timecreated DESC";
 
@@ -6122,40 +6101,7 @@ final class api {
         return $counts;
     }
 
-    /**
-     * SQL join for aggregated nomination item counts.
-     *
-     * @return string
-     */
-    private static function get_nomination_item_aggregate_join_sql(): string {
-        return "LEFT JOIN (
-                    SELECT ni.nominationid,
-                           COUNT(1) AS totalitems,
-                           SUM(CASE WHEN ni.status IN ('ssteamprogress', 'rejected', 'closed') THEN 1 ELSE 0 END)
-                               AS revieweditems
-                      FROM {spotaward_nomination_items} ni
-                  GROUP BY ni.nominationid
-                ) ni_agg ON ni_agg.nominationid = n.id";
-    }
 
-    /**
-     * SQL join for aggregated certificate file counts.
-     *
-     * @param string $contextparam
-     * @return string
-     */
-    private static function get_certificate_file_aggregate_join_sql(string $contextparam = 'syscontextid'): string {
-        return "LEFT JOIN (
-                    SELECT f.itemid AS nominationid,
-                           COUNT(1) AS certificatesexist
-                      FROM {files} f
-                     WHERE f.contextid = :" . $contextparam . "
-                       AND f.component = 'local_spotaward'
-                       AND f.filearea = 'certificates'
-                       AND f.filename <> '.'
-                  GROUP BY f.itemid
-                ) cert_agg ON cert_agg.nominationid = n.id";
-    }
 
     /**
      * Get manager dashboard data.
@@ -6207,23 +6153,29 @@ final class api {
 
         $syscontextid = \context_system::instance()->id;
         $params['syscontextid'] = $syscontextid;
-        $itemaggjoin = self::get_nomination_item_aggregate_join_sql();
-        $fileaggjoin = self::get_certificate_file_aggregate_join_sql();
 
         $sql = "SELECT n.*, c.fullname AS coursename,
                        mentor.firstname AS mentorfirstname, mentor.lastname AS mentorlastname,
                        pm.firstname AS pmfirstname, pm.lastname AS pmlastname,
                        maac.firstname AS maacfirstname, maac.lastname AS maaclastname,
-                       COALESCE(ni_agg.totalitems, 0) AS totalitems,
-                       COALESCE(ni_agg.revieweditems, 0) AS revieweditems,
-                       COALESCE(cert_agg.certificatesexist, 0) AS certificatesexist
+                       (SELECT COUNT(1)
+                          FROM {spotaward_nomination_items} ni
+                         WHERE ni.nominationid = n.id) AS totalitems,
+                       COALESCE((SELECT SUM(CASE WHEN ni.status IN ('ssteamprogress', 'rejected', 'closed') THEN 1 ELSE 0 END)
+                          FROM {spotaward_nomination_items} ni
+                         WHERE ni.nominationid = n.id), 0) AS revieweditems,
+                       (SELECT COUNT(1)
+                          FROM {files} f
+                         WHERE f.contextid = :syscontextid
+                           AND f.component = 'local_spotaward'
+                           AND f.filearea = 'certificates'
+                           AND f.itemid = n.id
+                           AND f.filename <> '.') AS certificatesexist
                   FROM {spotaward_nominations} n
                   JOIN {course} c ON c.id = n.courseid
                   JOIN {user} mentor ON mentor.id = n.nominatorid
                   JOIN {user} pm ON pm.id = n.programmanagerid
              LEFT JOIN {user} maac ON maac.id = n.maacexecutiveid
-                  {$itemaggjoin}
-                  {$fileaggjoin}
                   {$combinedsql}
                ORDER BY n.timecreated DESC";
 
@@ -6729,6 +6681,7 @@ final class api {
         }
 
         $transaction = $DB->start_delegated_transaction();
+        self::delete_nomination_certificate_files($nominationid);
         $DB->delete_records('spotaward_status_track', ['nominationid' => $nominationid]);
         $DB->delete_records('spotaward_nomination_items', ['nominationid' => $nominationid]);
         $DB->delete_records('spotaward_nominations', ['id' => $nominationid]);
