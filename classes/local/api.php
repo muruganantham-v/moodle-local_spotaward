@@ -4087,6 +4087,14 @@ final class api {
                 $htmldata = html_entity_decode($htmldata, ENT_QUOTES | ENT_HTML5, 'UTF-8');
                 $cssdata = html_entity_decode($cssdata, ENT_QUOTES | ENT_HTML5, 'UTF-8');
 
+            // Extract any inline <style> blocks from htmldata and append to cssdata
+                if (preg_match_all('/<style[^>]*>(.*?)<\/style>/is', $htmldata, $stylematches)) {
+                    foreach ($stylematches[1] as $stylecontent) {
+                        $cssdata .= "\n" . $stylecontent;
+                    }
+                    $htmldata = preg_replace('/<style[^>]*>.*?<\/style>/is', '', $htmldata);
+                }
+
             // Match Beautiful Certificate's own PDF renderer behavior.
                 $htmldata = str_replace("<section", "<body", $htmldata);
                 $htmldata = str_replace("</section>", "</body>", $htmldata);
