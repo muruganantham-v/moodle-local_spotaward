@@ -49,7 +49,7 @@ fputcsv($out, [
 $slno = 1;
 $approvername = $programmanager ? fullname($programmanager) : '';
 $issuedtoname = $maacexecutive ? fullname($maacexecutive) : '';
-$dateval = date('Y-m-d H:i:s', $nomination->timecreated); // Format matching the user's file.
+$dateval = date('Y-m-d', $nomination->timecreated);
 
 foreach ($items as $item) {
     if ($item->status === 'rejected') {
