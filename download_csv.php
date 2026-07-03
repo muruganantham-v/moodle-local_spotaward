@@ -36,7 +36,7 @@ fwrite($out, "\xEF\xBB\xBF");
 // Write header row.
 fputcsv($out, [
     'Sl #',
-    'Month',
+    'Email',
     'Date',
     'Student',
     'Regn ID',
