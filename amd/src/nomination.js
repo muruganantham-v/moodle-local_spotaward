@@ -398,7 +398,7 @@ define([], function() {
                         html += '<div class="spotaward-category-items spotaward-category-items-selected">';
                         selectedCats.forEach(function(category) {
                             html += '<div class="spotaward-category-item is-ok">' +
-                                '<span class="spotaward-category-icon">OK</span>' +
+                                '<span class="spotaward-category-icon">&#10003;</span>' +
                                 '<span class="spotaward-category-name">' + category.name + '</span>' +
                                 '<span class="spotaward-category-count">' + category.studentCount + ' student(s)</span>' +
                             '</div>';

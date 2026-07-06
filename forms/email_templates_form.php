@@ -106,6 +106,18 @@ final class email_templates_form extends moodleform {
                 ],
             ],
             [
+                'group' => 'adminhandover',
+                'subject' => 'admin_share_team_subject',
+                'body' => 'admin_share_team_body',
+                'subject_default' => 'admin_share_team_subject_default',
+                'body_default' => 'admin_share_team_body_default',
+                'placeholders' => [
+                    'recipient_name', 'course', 'module', 'professional', 'mentor_name',
+                    'program_manager_name', 'maac_executive_name', 'total_students',
+                    'certificate_mode', 'moodle_link',
+                ],
+            ],
+            [
                 'group' => 'closure',
                 'subject' => 'record_closed_subject',
                 'body' => 'record_closed_body',

@@ -41,7 +41,6 @@ $canmanagerapprove = is_siteadmin() || api::is_manager($USER->id);
 $isssteam = api::is_assigned_maac_executive($nomination, (int)$USER->id);
 $ispm = (int)$nomination->programmanagerid === (int)$USER->id;
 $cansharetoadmin = is_siteadmin() || api::is_ss_team((int)$USER->id);
-$canreassign = (is_siteadmin() || $isssteam || $ispm) && in_array($nomination->status, ['pending', 'ssteamprogress'], true);
 $canviewcertificates = ($canmanagerapprove || $isssteam)
     && in_array($nomination->status, ['ssteamprogress', 'closed'], true);
 
@@ -50,6 +49,7 @@ $nominator = core_user::get_user($nomination->nominatorid);
 $programmanager = core_user::get_user($nomination->programmanagerid);
 $maacexecutive = !empty($nomination->maacexecutiveid) ? core_user::get_user($nomination->maacexecutiveid) : null;
 $items = api::get_nomination_items($id);
+$canreassign = api::can_reassign_nomination($nomination, (int)$USER->id);
 
 if ($action === 'approve' && $itemid && $cancontinuereview && confirm_sesskey()) {
     // Guard against double-submit / back-button: only call the API if the item is

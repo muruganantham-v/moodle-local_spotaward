@@ -1347,7 +1347,7 @@ function local_spotaward_build_student_report_cards(array $report): array {
             'title' => (string)$row['activity'],
             'score' => (string)$row['percentage'],
             'completion' => (string)$row['completionrate'],
-            'meta' => get_string('activitytype', 'local_spotaward'),
+            'meta' => get_string('activitycategory', 'local_spotaward'),
         ];
     }
 
@@ -1366,7 +1366,7 @@ function local_spotaward_build_course_report_insights(array $report): array {
 
     $categorygroups = [];
     foreach ($rows as $row) {
-        $key = (string)($row['typelabel'] ?? '');
+        $key = (string)($row['categorylabel'] ?? '');
         if ($key === '') {
             continue;
         }
@@ -1615,7 +1615,7 @@ function local_spotaward_render_student_report_content(stdClass $student, stdCla
     $summarycolumns = [
         [
             'key' => 'activitytype',
-            'label' => get_string('activitytype', 'local_spotaward'),
+            'label' => get_string('activitycategory', 'local_spotaward'),
             'type' => 'text',
             'filter' => 'none',
         ],

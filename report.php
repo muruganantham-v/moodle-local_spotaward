@@ -10,7 +10,7 @@ require_login();
 
 $itemid = optional_param('itemid', 0, PARAM_INT);
 $courseid = optional_param('courseid', 0, PARAM_INT);
-$activitytype = optional_param('activitytype', '', PARAM_ALPHA);
+$activitytype = optional_param('activitytype', '', PARAM_ALPHANUMEXT);
 
 $systemcontext = context_system::instance();
 $PAGE->set_context($systemcontext);
@@ -82,8 +82,8 @@ if ($itemid > 0) {
     echo html_writer::label(get_string('course', 'local_spotaward'), 'id_courseid', false, ['class' => 'mr-2']);
     echo html_writer::select($courses, 'courseid', $course->id, false, ['id' => 'id_courseid', 'class' => 'custom-select d-inline-block w-auto mr-3']);
 }
-echo html_writer::label(get_string('activitytype', 'local_spotaward'), 'id_activitytype', false, ['class' => 'mr-2']);
-echo html_writer::select(api::get_report_activity_type_options(), 'activitytype', $activitytype, false,
+echo html_writer::label(get_string('activitycategory', 'local_spotaward'), 'id_activitytype', false, ['class' => 'mr-2']);
+echo html_writer::select(api::get_report_activity_type_options($course->id), 'activitytype', $activitytype, false,
     ['id' => 'id_activitytype', 'class' => 'custom-select d-inline-block w-auto mr-3']);
 echo html_writer::empty_tag('input', ['type' => 'submit', 'class' => 'btn btn-primary', 'value' => get_string('filter')]);
 echo html_writer::end_tag('form');

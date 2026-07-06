@@ -1523,6 +1523,7 @@ final class api {
                 self::build_nomination_email_data($nominationid),
                 $attachment
             );
+            self::send_admin_share_team_notification($nominationid);
 
             global $DB;
             $DB->update_record('spotaward_nominations', (object)[
@@ -1640,6 +1641,42 @@ final class api {
     }
 
     /**
+     * Notify the assigned Program Manager and SS Team contact after Admin handover.
+     *
+     * @param int $nominationid
+     * @return void
+     */
+    private static function send_admin_share_team_notification(int $nominationid): void {
+        $nomination = self::get_nomination($nominationid);
+        $recipients = [];
+
+        $programmanager = core_user::get_user($nomination->programmanagerid);
+        if ($programmanager && !empty($programmanager->email)) {
+            $recipients[] = $programmanager;
+        }
+
+        if (!empty($nomination->maacexecutiveid)) {
+            $maacexecutive = core_user::get_user((int)$nomination->maacexecutiveid);
+            if ($maacexecutive && !empty($maacexecutive->email)) {
+                $recipients[] = $maacexecutive;
+            }
+        }
+
+        if (empty($recipients)) {
+            return;
+        }
+
+        self::send_configured_notification(
+            $recipients,
+            'admin_share_team_subject',
+            'admin_share_team_body',
+            'admin_share_team_subject_default',
+            'admin_share_team_body_default',
+            self::build_nomination_email_data($nominationid)
+        );
+    }
+
+    /**
      * Reassign Program Manager and/or MAAC Executive for a nomination.
      *
      * @param int $nominationid
@@ -1653,16 +1690,12 @@ final class api {
         global $DB;
 
         $nomination = self::get_nomination($nominationid);
-        if (!in_array($nomination->status, ['pending', 'ssteamprogress'], true)) {
-            throw new moodle_exception('invalidparameter');
+        if (!self::can_reassign_nomination($nomination, $actorid)) {
+            throw new moodle_exception('notauthorised', 'local_spotaward');
         }
 
         $isassignedpm = (int)$nomination->programmanagerid === $actorid;
         $isassignedmaac = self::is_assigned_maac_executive($nomination, $actorid);
-
-        if (!is_siteadmin($actorid) && !$isassignedmaac && !$isassignedpm) {
-            throw new moodle_exception('notauthorised', 'local_spotaward');
-        }
 
         if (!is_siteadmin($actorid)) {
             if ($isassignedpm && (int)$nomination->maacexecutiveid !== $maacexecutiveid) {
@@ -1722,6 +1755,12 @@ final class api {
         }
         $DB->update_record('spotaward_nominations', $updaterecord);
         unset(self::$nominationcache[$nominationid]);
+
+        // Clear generated certificates so future view/download/share actions rebuild them
+        // with the newly assigned workflow users.
+        if ($nomination->status === 'ssteamprogress') {
+            self::delete_nomination_certificate_files($nominationid);
+        }
 
         foreach ($changes as $change) {
             $previoususer = !empty($change['previousid']) ? core_user::get_user((int)$change['previousid']) : null;
@@ -1827,6 +1866,7 @@ final class api {
                 $plaintextbody = $renderedbody;
                 $htmlbody = text_to_html($renderedbody, false, false, true);
             }
+            $htmlbody = self::ensure_notification_logo_present($htmlbody);
             email_to_user(
                 $recipient,
                 core_user::get_support_user(),
@@ -1972,6 +2012,30 @@ final class api {
         $replacements['{{logo_url}}'] = $CFG->wwwroot . '/local/spotaward/pix/emertxe_logo.png';
 
         return strtr($template, $replacements);
+    }
+
+    /**
+     * Ensure rendered HTML email includes the Emertxe logo.
+     *
+     * @param string $html
+     * @return string
+     */
+    private static function ensure_notification_logo_present(string $html): string {
+        global $CFG;
+
+        if (trim($html) === '') {
+            return $html;
+        }
+
+        if (stripos($html, 'emertxe_logo.png') !== false || stripos($html, '{{logo_url}}') !== false) {
+            return $html;
+        }
+
+        $logo = '<div style="width:100%;max-width:640px;text-align:right;margin:0 0 8px 0;">' .
+            '<img src="' . s($CFG->wwwroot . '/local/spotaward/pix/emertxe_logo.png') . '" alt="Emertxe" ' .
+            'style="width:100px;height:auto;" /></div>';
+
+        return $logo . $html;
     }
 
     /**
@@ -4664,11 +4728,11 @@ final class api {
         }
 
         return [
-            'quality' => 78,
-            'maxlongedge' => 1800,
-            'dpi' => 96,
-            'imgdpi' => 96,
-            'pdfjpegquality' => 55,
+            'quality' => 84,
+            'maxlongedge' => 2200,
+            'dpi' => 110,
+            'imgdpi' => 110,
+            'pdfjpegquality' => 62,
         ];
     }
 
@@ -5171,18 +5235,26 @@ final class api {
     }
 
     /**
-     * Supported report activity type options.
+     * Supported report category filter options for a course.
      *
+     * @param int $courseid
      * @return array
      */
-    public static function get_report_activity_type_options(): array {
-        return [
+    public static function get_report_activity_type_options(int $courseid = 0): array {
+        $options = [
             '' => get_string('allactivitytypes', 'local_spotaward'),
-            'assignments' => get_string('assignments', 'local_spotaward'),
-            'projects' => get_string('projects', 'local_spotaward'),
-            'quiz' => get_string('quizlabel', 'local_spotaward'),
-            'attendance' => get_string('attendancelabel', 'local_spotaward'),
         ];
+
+        if ($courseid <= 0) {
+            return $options;
+        }
+
+        $course = get_course($courseid);
+        foreach (self::get_report_grade_category_map($course) as $key => $label) {
+            $options[$key] = $label;
+        }
+
+        return $options;
     }
 
     /**
@@ -5195,7 +5267,7 @@ final class api {
      */
     private static function build_course_activity_report(int $courseid, array $students, string $activitytype = ''): array {
         $course = get_course($courseid);
-        $activitytype = self::normalize_report_activity_type($activitytype);
+        $activitytype = self::normalize_report_activity_type($course, $activitytype);
         $activities = self::get_course_report_activities($course, $activitytype);
         $studentids = array_map(static function(stdClass $student): int {
             return (int)$student->id;
@@ -5301,16 +5373,18 @@ final class api {
     /**
      * Normalize report activity type filter.
      *
+     * @param stdClass $course
      * @param string $activitytype
      * @return string
      */
-    private static function normalize_report_activity_type(string $activitytype): string {
-        $activitytype = trim(\core_text::strtolower($activitytype));
-        if (in_array($activitytype, ['', 'assignments', 'projects', 'quiz', 'attendance'], true)) {
-            return $activitytype;
+    private static function normalize_report_activity_type(stdClass $course, string $activitytype): string {
+        $activitytype = trim($activitytype);
+        if ($activitytype === '') {
+            return '';
         }
 
-        return '';
+        $categories = self::get_report_grade_category_map($course);
+        return array_key_exists($activitytype, $categories) ? $activitytype : '';
     }
 
     /**
@@ -5398,17 +5472,26 @@ final class api {
 
         if (!self::table_has_field('grade_items', 'itemmodule') ||
             !self::table_has_field('grade_items', 'iteminstance') ||
-            !self::table_has_field('grade_items', 'itemname')) {
+            !self::table_has_field('grade_items', 'itemname') ||
+            !self::table_has_field('grade_items', 'categoryid')) {
             return [];
         }
 
-        $sql = "SELECT gi.id, gi.itemmodule, gi.iteminstance, gi.itemname, gi.grademax
+        $joingradecategory = '';
+        $categorynamefield = "''";
+        if (self::table_has_field('grade_categories', 'fullname')) {
+            $joingradecategory = 'LEFT JOIN {grade_categories} gc ON gc.id = gi.categoryid';
+            $categorynamefield = 'gc.fullname';
+        }
+
+        $sql = "SELECT gi.id, gi.itemmodule, gi.iteminstance, gi.itemname, gi.grademax, gi.categoryid,
+                       {$categorynamefield} AS gradecategoryname
                   FROM {grade_items} gi
+                  {$joingradecategory}
                  WHERE gi.courseid = :courseid
                    AND gi.itemtype = :itemtype
                    AND gi.itemnumber = :itemnumber
-                   AND gi.itemmodule IN ('assign', 'quiz', 'attendance', 'vpl')
-              ORDER BY gi.itemmodule ASC, gi.itemname ASC";
+              ORDER BY gi.sortorder ASC, gi.itemname ASC";
 
         $records = $DB->get_records_sql($sql, [
             'courseid' => $course->id,
@@ -5423,7 +5506,14 @@ final class api {
                 continue;
             }
 
-            if ($activitytype !== '' && $classification['category'] !== $activitytype) {
+            $categorykey = self::get_report_grade_category_key(
+                isset($record->categoryid) ? (int)$record->categoryid : 0
+            );
+            $categorylabel = self::get_report_grade_category_label(
+                isset($record->gradecategoryname) ? (string)$record->gradecategoryname : ''
+            );
+
+            if ($activitytype !== '' && $categorykey !== $activitytype) {
                 continue;
             }
 
@@ -5433,8 +5523,8 @@ final class api {
                 'iteminstance' => (int)$record->iteminstance,
                 'activityname' => trim((string)$record->itemname),
                 'grademax' => $record->grademax !== null ? (float)$record->grademax : null,
-                'category' => $classification['category'],
-                'categorylabel' => $classification['categorylabel'],
+                'category' => $categorykey,
+                'categorylabel' => $categorylabel,
                 'typelabel' => $classification['typelabel'],
             ];
         }
@@ -5458,15 +5548,11 @@ final class api {
         switch ($record->itemmodule) {
             case 'quiz':
                 return [
-                    'category' => 'quiz',
-                    'categorylabel' => get_string('quizlabel', 'local_spotaward'),
                     'typelabel' => get_string('quizlabel', 'local_spotaward'),
                 ];
 
             case 'attendance':
                 return [
-                    'category' => 'attendance',
-                    'categorylabel' => get_string('attendancelabel', 'local_spotaward'),
                     'typelabel' => get_string('attendancelabel', 'local_spotaward'),
                 ];
 
@@ -5474,24 +5560,18 @@ final class api {
                 if (in_array($profile, ['advance_c_programming', 'cpp_programming', 'qt_programming'], true)) {
                     if ($prefix === 'C') {
                         return [
-                            'category' => 'assignments',
-                            'categorylabel' => get_string('assignments', 'local_spotaward'),
                             'typelabel' => get_string('templateprograms', 'local_spotaward'),
                         ];
                     }
 
                     if ($prefix === 'T') {
                         return [
-                            'category' => 'assignments',
-                            'categorylabel' => get_string('assignments', 'local_spotaward'),
                             'typelabel' => get_string('classworks', 'local_spotaward'),
                         ];
                     }
                 }
 
                 return [
-                    'category' => 'assignments',
-                    'categorylabel' => get_string('assignments', 'local_spotaward'),
                     'typelabel' => get_string('assignments', 'local_spotaward'),
                 ];
 
@@ -5501,8 +5581,6 @@ final class api {
                     'linux_systems', 'cpp_programming', 'qt_programming', 'embedded_linux',
                 ], true)) {
                     return [
-                        'category' => 'projects',
-                        'categorylabel' => get_string('projects', 'local_spotaward'),
                         'typelabel' => get_string('projects', 'local_spotaward'),
                     ];
                 }
@@ -5510,27 +5588,23 @@ final class api {
                 if (in_array($profile, ['microcontrollers', 'arduino', 'iot_gateway', 'iot_cloud'], true)) {
                     if ($prefix === 'P') {
                         return [
-                            'category' => 'projects',
-                            'categorylabel' => get_string('projects', 'local_spotaward'),
                             'typelabel' => get_string('projects', 'local_spotaward'),
                         ];
                     }
 
                     return [
-                        'category' => 'assignments',
-                        'categorylabel' => get_string('assignments', 'local_spotaward'),
                         'typelabel' => get_string('assignments', 'local_spotaward'),
                     ];
                 }
 
                 return [
-                    'category' => 'assignments',
-                    'categorylabel' => get_string('assignments', 'local_spotaward'),
                     'typelabel' => get_string('assignments', 'local_spotaward'),
                 ];
         }
 
-        return null;
+        return [
+            'typelabel' => self::get_report_module_label((string)($record->itemmodule ?? '')),
+        ];
     }
 
     /**
@@ -5545,6 +5619,113 @@ final class api {
         }
 
         return '';
+    }
+
+    /**
+     * Get gradebook category options available in a course report.
+     *
+     * @param stdClass $course
+     * @return array
+     */
+    private static function get_report_grade_category_map(stdClass $course): array {
+        global $DB;
+        static $cache = [];
+
+        if (isset($cache[$course->id])) {
+            return $cache[$course->id];
+        }
+
+        $options = [];
+        $hasuncategorised = false;
+
+        if (!self::table_has_field('grade_items', 'categoryid')) {
+            return $cache[$course->id] = $options;
+        }
+
+        $joingradecategory = '';
+        $categorynamefield = "''";
+        if (self::table_has_field('grade_categories', 'fullname')) {
+            $joingradecategory = 'LEFT JOIN {grade_categories} gc ON gc.id = gi.categoryid';
+            $categorynamefield = 'gc.fullname';
+        }
+
+        $sql = "SELECT DISTINCT gi.categoryid, {$categorynamefield} AS gradecategoryname
+                  FROM {grade_items} gi
+                  {$joingradecategory}
+                 WHERE gi.courseid = :courseid
+                   AND gi.itemtype = :itemtype
+                   AND gi.itemnumber = :itemnumber
+              ORDER BY gradecategoryname ASC";
+
+        $records = $DB->get_records_sql($sql, [
+            'courseid' => $course->id,
+            'itemtype' => 'mod',
+            'itemnumber' => 0,
+        ]);
+
+        foreach ($records as $record) {
+            $categoryid = isset($record->categoryid) ? (int)$record->categoryid : 0;
+            $label = self::get_report_grade_category_label((string)($record->gradecategoryname ?? ''));
+            $key = self::get_report_grade_category_key($categoryid);
+            if ($key === 'uncategorized') {
+                $hasuncategorised = true;
+            }
+            $options[$key] = $label;
+        }
+
+        if ($hasuncategorised) {
+            unset($options['uncategorized']);
+            $options['uncategorized'] = get_string('uncategorizedgradecategory', 'local_spotaward');
+        }
+
+        return $cache[$course->id] = $options;
+    }
+
+    /**
+     * Convert a gradebook category id to a stable filter key.
+     *
+     * @param int $categoryid
+     * @return string
+     */
+    private static function get_report_grade_category_key(int $categoryid): string {
+        return $categoryid > 0 ? (string)$categoryid : 'uncategorized';
+    }
+
+    /**
+     * Convert a gradebook category name to a display label.
+     *
+     * @param string $categoryname
+     * @return string
+     */
+    private static function get_report_grade_category_label(string $categoryname): string {
+        $categoryname = trim($categoryname);
+        if ($categoryname === '') {
+            return get_string('uncategorizedgradecategory', 'local_spotaward');
+        }
+
+        return $categoryname;
+    }
+
+    /**
+     * Build a human-readable module label for report rows.
+     *
+     * @param string $module
+     * @return string
+     */
+    private static function get_report_module_label(string $module): string {
+        $module = trim(\core_text::strtolower($module));
+        $labels = [
+            'assign' => get_string('assignments', 'local_spotaward'),
+            'quiz' => get_string('quizlabel', 'local_spotaward'),
+            'attendance' => get_string('attendancelabel', 'local_spotaward'),
+            'vpl' => get_string('templateprograms', 'local_spotaward'),
+        ];
+
+        if (isset($labels[$module])) {
+            return $labels[$module];
+        }
+
+        return $module !== '' ? ucfirst($module) : get_string('activitytype', 'local_spotaward');
     }
 
     /**
@@ -5601,10 +5782,10 @@ final class api {
             $groups = [];
 
             foreach ($rows as $row) {
-                $key = $row['typelabel'];
+                $key = $row['categorylabel'];
                 if (!isset($groups[$key])) {
                     $groups[$key] = [
-                        'activity' => $row['typelabel'],
+                        'activity' => $row['categorylabel'],
                         'scoretotal' => 0.0,
                         'scorecount' => 0,
                         'completionvalue' => 0,
@@ -5747,18 +5928,9 @@ final class api {
      * @return int
      */
     private static function sort_report_activities(array $left, array $right): int {
-        $order = [
-            'assignments' => 1,
-            'projects' => 2,
-            'quiz' => 3,
-            'attendance' => 4,
-        ];
-
-        $leftorder = $order[$left['category']] ?? 99;
-        $rightorder = $order[$right['category']] ?? 99;
-
-        if ($leftorder !== $rightorder) {
-            return $leftorder <=> $rightorder;
+        $categorycompare = strcasecmp((string)($left['categorylabel'] ?? ''), (string)($right['categorylabel'] ?? ''));
+        if ($categorycompare !== 0) {
+            return $categorycompare;
         }
 
         return strnatcasecmp($left['activityname'], $right['activityname']);
@@ -6245,7 +6417,10 @@ final class api {
 
         $sql = "SELECT n.id, n.courseid, n.maacexecutiveid, n.status, n.adminsharedtime, n.admindownloadedtime,
                        c.fullname AS coursename,
-                       maac.firstname AS maacfirstname, maac.lastname AS maaclastname
+                       maac.firstname AS maacfirstname, maac.lastname AS maaclastname,
+                       (SELECT COUNT(1)
+                          FROM {spotaward_nomination_items} ni
+                         WHERE ni.nominationid = n.id) AS studentcount
                   FROM {spotaward_nominations} n
                   JOIN {course} c ON c.id = n.courseid
              LEFT JOIN {user} maac ON maac.id = n.maacexecutiveid
@@ -6417,6 +6592,55 @@ final class api {
      */
     public static function is_assigned_maac_executive(stdClass $nomination, int $userid): bool {
         return !empty($nomination->maacexecutiveid) && (int)$nomination->maacexecutiveid === $userid;
+    }
+
+    /**
+     * Whether the nomination already has reviewed items.
+     *
+     * @param int $nominationid
+     * @return bool
+     */
+    public static function nomination_has_reviewed_items(int $nominationid): bool {
+        foreach (self::get_nomination_items($nominationid) as $item) {
+            if (!in_array((string)$item->status, ['pending', 'underreview'], true)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Whether a user can reassign a nomination in its current workflow state.
+     *
+     * @param stdClass $nomination
+     * @param int $userid
+     * @return bool
+     */
+    public static function can_reassign_nomination(stdClass $nomination, int $userid): bool {
+        if (!in_array($nomination->status, ['pending', 'ssteamprogress'], true)) {
+            return false;
+        }
+
+        if (!empty($nomination->adminsharedtime)) {
+            return false;
+        }
+
+        if (is_siteadmin($userid)) {
+            return true;
+        }
+
+        $isassignedpm = (int)$nomination->programmanagerid === $userid;
+        $isassignedmaac = self::is_assigned_maac_executive($nomination, $userid);
+        if (!$isassignedpm && !$isassignedmaac) {
+            return false;
+        }
+
+        if ($isassignedpm && self::nomination_has_reviewed_items((int)$nomination->id)) {
+            return false;
+        }
+
+        return true;
     }
 
     /**

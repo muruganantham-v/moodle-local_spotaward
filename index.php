@@ -671,6 +671,7 @@ if ($view === 'admin' && $isadmin) {
         ],
         ['key' => 'submissiondate', 'label' => get_string('submitteddate', 'local_spotaward'), 'type' => 'date', 'filter' => 'date'],
         ['key' => 'course', 'label' => get_string('course', 'local_spotaward'), 'type' => 'text', 'filter' => 'select'],
+        ['key' => 'studentcount', 'label' => get_string('students', 'local_spotaward'), 'type' => 'number', 'filter' => 'none'],
         ['key' => 'maacexecutive', 'label' => get_string('maacexecutive', 'local_spotaward'), 'type' => 'text', 'filter' => 'select'],
         ['key' => 'downloadstatus', 'label' => get_string('status', 'local_spotaward'), 'type' => 'text', 'filter' => 'select'],
     ];
@@ -683,6 +684,7 @@ if ($view === 'admin' && $isadmin) {
         ]));
         $coursename = format_string($record->coursename);
         $timestamp = (int)$record->adminsharedtime;
+        $studentcount = (int)($record->studentcount ?? 0);
         $downloaded = !empty($record->admindownloadedtime);
         $downloadlabel = $downloaded
             ? get_string('admindownloaded', 'local_spotaward')
@@ -703,6 +705,10 @@ if ($view === 'admin' && $isadmin) {
                 'date' => userdate($timestamp, '%Y-%m-%d'),
             ]),
             'course' => local_spotaward_table_cell($coursename, ['text' => strip_tags($coursename)]),
+            'studentcount' => local_spotaward_table_cell((string)$studentcount, [
+                'text' => (string)$studentcount,
+                'sort' => $studentcount,
+            ]),
             'maacexecutive' => local_spotaward_table_cell(s($maacname), ['text' => $maacname]),
             'downloadstatus' => local_spotaward_table_cell(
                 local_spotaward_render_badge($downloadlabel),
