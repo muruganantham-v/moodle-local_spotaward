@@ -426,7 +426,6 @@ if ($view === 'nominator' && $isnominator) {
                 'coursename' => format_string($submission->coursename),
                 'module' => s($submission->modulename),
                 'statuslabel' => local_spotaward_render_badge(get_string($submission->status, 'local_spotaward')),
-                'detailsurl' => (new moodle_url('/local/spotaward/submission.php', ['id' => $submission->id]))->out(false),
             ];
         }
         echo $output->submission_history($historyrows);

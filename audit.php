@@ -37,6 +37,8 @@ $fromstatus = optional_param('fromstatus', '', PARAM_ALPHA);
 $tostatus = optional_param('tostatus', '', PARAM_ALPHA);
 $datefrom = optional_param('datefrom', '', PARAM_RAW_TRIMMED);
 $dateto = optional_param('dateto', '', PARAM_RAW_TRIMMED);
+$auditaction = optional_param('auditaction', '', PARAM_ALPHA);
+$selectedauditids = optional_param_array('selectedauditids', [], PARAM_INT);
 $perpage = 50;
 
 $filters = [
@@ -57,6 +59,27 @@ $baseurl = new moodle_url('/local/spotaward/audit.php', array_filter([
     'dateto' => $dateto !== '' ? $dateto : null,
 ]));
 
+if ($auditaction !== '') {
+    require_sesskey();
+
+    if ($auditaction === 'deleteselected') {
+        $deletedcount = api::delete_audit_log_records($selectedauditids);
+        if ($deletedcount > 0) {
+            redirect($baseurl, get_string('auditlogdeletedselected', 'local_spotaward', $deletedcount), 0,
+                \core\output\notification::NOTIFY_SUCCESS);
+        }
+
+        redirect($baseurl, get_string('auditlognoselected', 'local_spotaward'), 0,
+            \core\output\notification::NOTIFY_WARNING);
+    }
+
+    if ($auditaction === 'deleteall') {
+        $deletedcount = api::delete_all_audit_log_records();
+        redirect($baseurl, get_string('auditlogdeletedall', 'local_spotaward', $deletedcount), 0,
+            \core\output\notification::NOTIFY_SUCCESS);
+    }
+}
+
 $PAGE->set_context($systemcontext);
 $PAGE->set_url('/local/spotaward/audit.php', $baseurl->params());
 $PAGE->set_title(get_string('auditlog', 'local_spotaward'));
@@ -69,6 +92,10 @@ $totalauditrows = api::count_audit_log_records($filters);
 $records = api::get_audit_log($filters, $page, $perpage);
 
 $columns = [
+    ['key' => 'selectrow', 'label' => html_writer::checkbox('selectallaudit', 1, false, '', [
+        'id' => 'id_selectallaudit',
+        'title' => get_string('selectall'),
+    ]), 'labelhtml' => true, 'type' => 'text', 'filter' => 'none', 'sortable' => false, 'searchable' => false],
     ['key' => 'timecreated', 'label' => get_string('date'), 'type' => 'date', 'filter' => 'none'],
     ['key' => 'actor', 'label' => get_string('actor', 'local_spotaward'), 'type' => 'text', 'filter' => 'none'],
     ['key' => 'nomination', 'label' => get_string('nomination', 'local_spotaward'), 'type' => 'text', 'filter' => 'none'],
@@ -119,6 +146,13 @@ foreach ($records as $record) {
     }
 
     $rows[] = [
+        'selectrow' => local_spotaward_table_cell(
+            html_writer::checkbox('selectedauditids[]', (int)$record->id, false, '', [
+                'class' => 'spotaward-audit-select',
+                'data-audit-select' => '1',
+            ]),
+            ['text' => '', 'search' => '']
+        ),
         'timecreated' => local_spotaward_table_cell(
             userdate((int)$record->timecreated),
             [
@@ -228,9 +262,33 @@ echo html_writer::end_tag('form');
 if (empty($rows)) {
     echo html_writer::div(get_string('noauditrecords', 'local_spotaward'), 'spotaward-empty');
 } else {
+    echo html_writer::start_tag('form', [
+        'method' => 'post',
+        'action' => $baseurl->out(false),
+        'id' => 'spotaward-audit-delete-form',
+    ]);
+    echo html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'sesskey', 'value' => sesskey()]);
+    echo html_writer::start_div('mb-3 d-flex flex-wrap align-items-center');
+    echo html_writer::tag('button', get_string('deleteselected', 'local_spotaward'), [
+        'type' => 'submit',
+        'name' => 'auditaction',
+        'value' => 'deleteselected',
+        'class' => 'btn btn-danger mr-2',
+        'onclick' => "return confirm('" . addslashes_js(get_string('auditlogconfirmdeleteselected', 'local_spotaward')) . "');",
+    ]);
+    echo html_writer::tag('button', get_string('deleteallauditlogs', 'local_spotaward'), [
+        'type' => 'submit',
+        'name' => 'auditaction',
+        'value' => 'deleteall',
+        'class' => 'btn btn-outline-danger',
+        'onclick' => "return confirm('" . addslashes_js(get_string('auditlogconfirmdeleteall', 'local_spotaward')) . "');",
+    ]);
+    echo html_writer::end_div();
+
     echo local_spotaward_render_data_table($columns, $rows, [
         'id' => 'spotaward-audit-log-table',
     ]);
+    echo html_writer::end_tag('form');
 
     echo $OUTPUT->paging_bar($totalauditrows, $page, $perpage, $baseurl);
 }
@@ -239,4 +297,18 @@ echo html_writer::end_div();
 echo html_writer::end_div();
 echo html_writer::end_div();
 echo html_writer::end_div();
+echo html_writer::script("
+document.addEventListener('DOMContentLoaded', function() {
+    var selectAll = document.getElementById('id_selectallaudit');
+    if (!selectAll) {
+        return;
+    }
+
+    selectAll.addEventListener('change', function() {
+        document.querySelectorAll('[data-audit-select=\"1\"]').forEach(function(box) {
+            box.checked = selectAll.checked;
+        });
+    });
+});
+");
 echo $OUTPUT->footer();

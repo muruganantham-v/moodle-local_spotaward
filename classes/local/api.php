@@ -537,24 +537,32 @@ final class api {
         $attendancebyuser = [];
         $moduletestbyuser = [];
         $quizbyuser = [];
+        $assignmentactivities = [];
+        $projectactivities = [];
 
         foreach ($activities as $activity) {
+            $basecategory = self::normalize_gradebook_category_label((string)($activity['categorylabel'] ?? ''));
             foreach ($studentids as $studentid) {
                 $gradevalue = $grades[$activity['gradeitemid']][$studentid] ?? null;
                 $scorepercent = self::get_report_score_percent($activity, $gradevalue);
-                if ($scorepercent === null) {
-                    continue;
-                }
 
-                if ($activity['category'] === 'attendance') {
+                if ($scorepercent !== null && self::gradebook_category_matches($basecategory, ['attendance'])) {
                     $attendancebyuser[$studentid][] = $scorepercent;
                 }
 
-                if (self::is_module_test_activity($activity)) {
+                if ($scorepercent !== null && self::gradebook_category_matches($basecategory, ['module test'])) {
                     $moduletestbyuser[$studentid][] = $scorepercent;
-                } else if ($activity['category'] === 'quiz') {
+                } else if ($scorepercent !== null && self::gradebook_category_matches($basecategory, ['quiz'])) {
                     $quizbyuser[$studentid][] = $scorepercent;
                 }
+            }
+
+            if (self::gradebook_category_matches($basecategory, ['assignment'])) {
+                $assignmentactivities[] = $activity;
+            }
+
+            if (self::gradebook_category_matches($basecategory, ['project'])) {
+                $projectactivities[] = $activity;
             }
         }
 
@@ -580,13 +588,6 @@ final class api {
         $suggestions['Top Performer - Module Test'] = self::pick_top_students_by_average($moduletestbyuser, 3);
         $suggestions['Quiz Champion'] = self::pick_highest_scoring_students($quizbyuser);
 
-        $assignmentactivities = array_values(array_filter($activities, static function(array $activity): bool {
-            return $activity['category'] === 'assignments';
-        }));
-        $projectactivities = array_values(array_filter($activities, static function(array $activity): bool {
-            return $activity['category'] === 'projects';
-        }));
-
         if (count($assignmentactivities) >= 3) {
             $assignmentranking = self::get_submission_rankings($assignmentactivities, $studentids);
             $suggestions['Enthusiastic Learner'] = self::pick_lowest_rank_students($assignmentranking, count($assignmentactivities), 3);
@@ -601,14 +602,40 @@ final class api {
     }
 
     /**
-     * Determine whether an activity should be treated as a module test.
+     * Normalize a gradebook category label for matching.
      *
-     * @param array $activity
+     * @param string $label
+     * @return string
+     */
+    private static function normalize_gradebook_category_label(string $label): string {
+        $label = \core_text::strtolower(trim($label));
+        $label = str_replace(['_', '-', '&'], ' ', $label);
+        $label = preg_replace('/\s+/', ' ', $label);
+        return trim((string)$label);
+    }
+
+    /**
+     * Check whether a gradebook category label matches any keyword.
+     *
+     * @param string $categorylabel
+     * @param array $keywords
      * @return bool
      */
-    private static function is_module_test_activity(array $activity): bool {
-        $name = \core_text::strtolower(trim((string)($activity['activityname'] ?? '')));
-        return $name !== '' && strpos($name, 'module test') !== false;
+    private static function gradebook_category_matches(string $categorylabel, array $keywords): bool {
+        if ($categorylabel === '' || $categorylabel === self::normalize_gradebook_category_label(
+            get_string('uncategorizedgradecategory', 'local_spotaward')
+        )) {
+            return false;
+        }
+
+        foreach ($keywords as $keyword) {
+            $keyword = self::normalize_gradebook_category_label((string)$keyword);
+            if ($keyword !== '' && strpos($categorylabel, $keyword) !== false) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -1890,6 +1917,7 @@ final class api {
         if ($cliqbodytemplate === '') {
             $cliqbodytemplate = get_string('cliq_' . $defaultbodykey, 'local_spotaward');
         }
+        $cliqbodytemplate = self::ensure_cliq_record_link_present($cliqbodytemplate);
 
         self::send_zoho_cliq_notification($deduped, $cliqsubjecttemplate, $cliqbodytemplate, $data);
     }
@@ -1902,6 +1930,29 @@ final class api {
      */
     private static function notification_body_is_html(string $body): bool {
         return (bool)preg_match('/<\s*(table|thead|tbody|tr|th|td|p|br|div|strong|ul|ol|li)\b/i', $body);
+    }
+
+    /**
+     * Ensure Cliq notification templates always include the Moodle record link.
+     *
+     * @param string $body
+     * @return string
+     */
+    private static function ensure_cliq_record_link_present(string $body): string {
+        if (stripos($body, '{{moodle_link}}') !== false ||
+                stripos($body, '{{url}}') !== false ||
+                stripos($body, 'moodle record link') !== false ||
+                stripos($body, 'moodle link') !== false ||
+                stripos($body, 'record link') !== false) {
+            return $body;
+        }
+
+        $body = rtrim($body);
+        if ($body !== '') {
+            $body .= "\n\n";
+        }
+
+        return $body . 'Moodle Record Link: {{moodle_link}}';
     }
 
     /**
@@ -2518,6 +2569,46 @@ final class api {
               WHERE $where",
             $params
         );
+    }
+
+    /**
+     * Delete selected audit log rows.
+     *
+     * @param array $recordids
+     * @return int
+     */
+    public static function delete_audit_log_records(array $recordids): int {
+        global $DB;
+
+        $recordids = array_values(array_unique(array_filter(array_map('intval', $recordids))));
+        if (empty($recordids)) {
+            return 0;
+        }
+
+        [$insql, $params] = $DB->get_in_or_equal($recordids, SQL_PARAMS_NAMED, 'auditdel');
+        $existing = $DB->get_records_select('spotaward_status_track', 'id ' . $insql, $params, '', 'id');
+        if (empty($existing)) {
+            return 0;
+        }
+
+        $DB->delete_records_select('spotaward_status_track', 'id ' . $insql, $params);
+        return count($existing);
+    }
+
+    /**
+     * Delete all audit log rows.
+     *
+     * @return int
+     */
+    public static function delete_all_audit_log_records(): int {
+        global $DB;
+
+        $count = (int)$DB->count_records('spotaward_status_track');
+        if ($count > 0) {
+            $DB->delete_records('spotaward_status_track');
+        }
+
+        return $count;
     }
 
     /**
@@ -3588,6 +3679,48 @@ final class api {
     }
 
     /**
+     * Merge multiple PDF binaries into a temp PDF file.
+     *
+     * @param array $pdfcontents
+     * @param string $outputfilename
+     * @return string
+     */
+    public static function merge_pdf_documents_to_temp_path(array $pdfcontents,
+            string $outputfilename = 'certificates.pdf'): string {
+        $tempfiles = self::create_temp_pdf_files_from_contents($pdfcontents, 'spotaward_merge_pdf_sources');
+        if (empty($tempfiles)) {
+            return '';
+        }
+
+        try {
+            return self::merge_pdf_files_to_temp_path($tempfiles, $outputfilename);
+        } finally {
+            self::cleanup_temp_files($tempfiles);
+        }
+    }
+
+    /**
+     * Merge stored certificate files into a temp PDF file.
+     *
+     * @param array $files
+     * @param string $outputfilename
+     * @return string
+     */
+    public static function merge_stored_pdf_files_to_temp_path(array $files,
+            string $outputfilename = 'certificates.pdf'): string {
+        $tempfiles = self::create_temp_pdf_files_from_stored_files($files, 'spotaward_merge_pdf_sources');
+        if (empty($tempfiles)) {
+            return '';
+        }
+
+        try {
+            return self::merge_pdf_files_to_temp_path($tempfiles, $outputfilename);
+        } finally {
+            self::cleanup_temp_files($tempfiles);
+        }
+    }
+
+    /**
      * Merge PDF files from temp paths into a single PDF.
      *
      * @param array $pdfpaths
@@ -3595,6 +3728,30 @@ final class api {
      * @return string
      */
     public static function merge_pdf_files(array $pdfpaths, string $outputfilename = 'certificates.pdf'): string {
+        $mergedpath = self::merge_pdf_files_to_temp_path($pdfpaths, $outputfilename);
+        if ($mergedpath === '' || !is_file($mergedpath)) {
+            return '';
+        }
+
+        try {
+            $content = file_get_contents($mergedpath);
+            return $content !== false ? $content : '';
+        } finally {
+            @unlink($mergedpath);
+        }
+    }
+
+    /**
+     * Merge PDF files from temp paths into a single temp PDF file.
+     *
+     * @param array $pdfpaths
+     * @param string $outputfilename
+     * @return string
+     */
+    public static function merge_pdf_files_to_temp_path(array $pdfpaths,
+            string $outputfilename = 'certificates.pdf'): string {
+        global $CFG;
+
         $pdfpaths = array_values(array_filter($pdfpaths, static function($path) {
             return is_string($path) && $path !== '' && is_file($path);
         }));
@@ -3625,13 +3782,22 @@ final class api {
             }
         }
 
-        $merged = $pdf->Output($outputfilename, 'S');
-        $optimized = self::optimize_pdf_with_ghostscript($merged, $outputfilename);
-        if ($optimized !== '') {
-            $merged = $optimized;
+        $tempdir = make_temp_directory('spotaward_merged_output');
+        $mergedpath = tempnam($tempdir, 'spotawardmerged');
+        if ($mergedpath === false) {
+            return '';
+        }
+        $finalpath = $mergedpath . '.pdf';
+        @rename($mergedpath, $finalpath);
+        $pdf->Output($finalpath, 'F');
+
+        $optimizedpath = self::optimize_pdf_file_with_ghostscript($finalpath, $outputfilename);
+        if ($optimizedpath !== '' && is_file($optimizedpath) && $optimizedpath !== $finalpath) {
+            @unlink($finalpath);
+            $finalpath = $optimizedpath;
         }
 
-        return $merged;
+        return is_file($finalpath) ? $finalpath : '';
     }
 
     /**
@@ -4613,18 +4779,27 @@ final class api {
             throw new moodle_exception('nocertificates', 'local_spotaward');
         }
 
-        $mergedpdf = self::merge_stored_pdf_files($files, $basename . '_certificates.pdf');
-        if ($mergedpdf === '') {
+        $mergedpdfpath = self::merge_stored_pdf_files_to_temp_path($files, $basename . '_certificates.pdf');
+        if ($mergedpdfpath === '' || !is_file($mergedpdfpath)) {
             throw new moodle_exception('nocertificates', 'local_spotaward');
         }
 
-        if (strlen($mergedpdf) > self::ADMIN_SHARE_MAX_BYTES) {
+        if ((filesize($mergedpdfpath) ?: 0) > self::ADMIN_SHARE_MAX_BYTES) {
             $compactpdffiles = self::generate_nomination_certificate_pdf_temp_files($nominationid, 'adminshare');
             if (!empty($compactpdffiles)) {
                 try {
-                    $compactmergedpdf = self::merge_pdf_files($compactpdffiles, $basename . '_certificates.pdf');
-                    if ($compactmergedpdf !== '' && strlen($compactmergedpdf) < strlen($mergedpdf)) {
-                        $mergedpdf = $compactmergedpdf;
+                    $compactmergedpdfpath = self::merge_pdf_files_to_temp_path($compactpdffiles, $basename . '_certificates.pdf');
+                    if ($compactmergedpdfpath !== '' && is_file($compactmergedpdfpath)) {
+                        $compactsize = filesize($compactmergedpdfpath) ?: PHP_INT_MAX;
+                        $mergedsize = filesize($mergedpdfpath) ?: PHP_INT_MAX;
+                        if ($compactsize < $mergedsize) {
+                            @unlink($mergedpdfpath);
+                            $mergedpdfpath = $compactmergedpdfpath;
+                            $compactmergedpdfpath = '';
+                        }
+                    }
+                    if (!empty($compactmergedpdfpath) && is_file($compactmergedpdfpath)) {
+                        @unlink($compactmergedpdfpath);
                     }
                 } finally {
                     self::cleanup_temp_files($compactpdffiles);
@@ -4632,21 +4807,15 @@ final class api {
             }
         }
 
-        if (strlen($mergedpdf) > self::ADMIN_SHARE_MAX_BYTES) {
+        if ((filesize($mergedpdfpath) ?: 0) > self::ADMIN_SHARE_MAX_BYTES) {
+            @unlink($mergedpdfpath);
             throw new moodle_exception('adminsharecertificatetoolarge', 'local_spotaward');
         }
 
-        check_dir_exists($CFG->tempdir . '/spotaward_share_admin');
-        $tmppdf = tempnam($CFG->tempdir . '/spotaward_share_admin', 'spotawardcertpdf');
-        if ($tmppdf === false) {
-            throw new moodle_exception('generalexceptionmessage', 'error', '', 'Unable to create certificate PDF.');
-        }
-        file_put_contents($tmppdf, $mergedpdf);
-
         return [
-            'path' => $tmppdf,
+            'path' => $mergedpdfpath,
             'name' => $basename . '_certificates.pdf',
-            'size' => filesize($tmppdf) ?: strlen($mergedpdf),
+            'size' => filesize($mergedpdfpath) ?: 0,
         ];
     }
 
@@ -4728,11 +4897,11 @@ final class api {
         }
 
         return [
-            'quality' => 84,
-            'maxlongedge' => 2200,
-            'dpi' => 110,
-            'imgdpi' => 110,
-            'pdfjpegquality' => 62,
+            'quality' => 82,
+            'maxlongedge' => 1800,
+            'dpi' => 96,
+            'imgdpi' => 96,
+            'pdfjpegquality' => 60,
         ];
     }
 
@@ -5026,8 +5195,8 @@ final class api {
             }
         }
 
-        $mergedpdf = self::merge_stored_pdf_files($storedfiles, 'spotaward_admin_certificates.pdf');
-        if ($mergedpdf === '') {
+        $mergedpdfpath = self::merge_stored_pdf_files_to_temp_path($storedfiles, 'spotaward_admin_certificates.pdf');
+        if ($mergedpdfpath === '' || !is_file($mergedpdfpath)) {
             throw new moodle_exception('nocertificates', 'local_spotaward');
         }
 
@@ -5046,12 +5215,20 @@ final class api {
         );
 
         $filename = 'Spot_Award_Admin_Certificates_' . userdate($now, '%Y%m%d_%H%M%S') . '.pdf';
-        header('Content-Type: application/pdf');
-        header('Content-Disposition: attachment; filename="' . $filename . '"');
-        header('Content-Length: ' . strlen($mergedpdf));
+        try {
+            header('Content-Type: application/pdf');
+            header('Content-Disposition: attachment; filename="' . $filename . '"');
+            header('Content-Length: ' . filesize($mergedpdfpath));
 
-        echo $mergedpdf;
-        exit;
+            while (ob_get_level()) {
+                ob_end_clean();
+            }
+
+            readfile($mergedpdfpath);
+            exit;
+        } finally {
+            @unlink($mergedpdfpath);
+        }
     }
 
     /**
@@ -5140,14 +5317,37 @@ final class api {
             $summarybyactivity[$activity] = $row;
         }
 
+        $summarybytype = [];
+        foreach ($rows as $row) {
+            $activity = (string)($row['categorylabel'] ?? '');
+            $typelabel = trim((string)($row['typelabel'] ?? ''));
+            if ($activity === '' || $typelabel === '' || !isset($summarybyactivity[$activity])) {
+                continue;
+            }
+
+            if (!isset($summarybytype[$typelabel])) {
+                $summarybytype[$typelabel] = $summarybyactivity[$activity];
+            }
+        }
+
+        $categories = [];
+        foreach ($summarybyactivity as $activity => $row) {
+            $categories[$activity] = [
+                'label' => $activity,
+                'percentage' => (string)($row['percentage'] ?? '-'),
+                'completionrate' => (string)($row['completionrate'] ?? '-'),
+            ];
+        }
+
         $attendancekey = get_string('attendancelabel', 'local_spotaward');
         $assignmentkey = get_string('assignments', 'local_spotaward');
         $projectkey = get_string('projects', 'local_spotaward');
 
         return [
-            'attendance' => (string)($summarybyactivity[$attendancekey]['percentage'] ?? '-'),
-            'assignmentcompletion' => (string)($summarybyactivity[$assignmentkey]['completionrate'] ?? '-'),
-            'projectcompletion' => (string)($summarybyactivity[$projectkey]['completionrate'] ?? '-'),
+            'categories' => $categories,
+            'attendance' => (string)($summarybytype[$attendancekey]['percentage'] ?? '-'),
+            'assignmentcompletion' => (string)($summarybytype[$assignmentkey]['completionrate'] ?? '-'),
+            'projectcompletion' => (string)($summarybytype[$projectkey]['completionrate'] ?? '-'),
         ];
     }
 
@@ -5329,11 +5529,10 @@ final class api {
             return $cache;
         }
 
-        $prefixes = [
-            'ADVC102', 'DS104', 'MC105', 'LI106', 'ECIP-GW_IOT_PROTOCOL102',
-            'ECIP-PYTHON', 'ECIP-ARDUINO', 'ECEP-ELARM', 'IOTCLOUD', 'LS101',
-            'CPP103', 'QT107'
-        ];
+        $prefixes = constants::nomination_course_shortname_prefixes();
+        if (empty($prefixes)) {
+            return $cache = [];
+        }
 
         $likes = [];
         $params = ['sitecourse' => SITEID];
@@ -5344,24 +5543,12 @@ final class api {
             $params[$paramname] = $prefix . '%';
         }
 
-        $namekeywords = [
-            'advance%c programming', 'data structure', 'dsa', 'microcontroller',
-            'linux internals', 'python programming', 'arduino', 'embedded linux',
-            'elarm', 'linux systems', 'c++ programming', 'cpp programming',
-            'qt programming', 'iot%gateway', 'iot%cloud'
-        ];
-        foreach ($namekeywords as $keyword) {
-            $paramname = 'keyword' . $i++;
-            $likes[] = $DB->sql_like('fullname', ':' . $paramname, false);
-            $params[$paramname] = '%' . $keyword . '%';
-        }
-
         $sql = 'id <> :sitecourse AND (' . implode(' OR ', $likes) . ')';
         $records = $DB->get_records_select('course', $sql, $params, 'fullname ASC', 'id, shortname, fullname');
 
         $courses = [];
         foreach ($records as $record) {
-            if (self::get_report_course_profile($record) === null) {
+            if (!constants::is_allowed_nomination_course_shortname((string)($record->shortname ?? ''))) {
                 continue;
             }
             $courses[$record->id] = format_string($record->fullname, true, ['context' => context_course::instance($record->id)]);
@@ -6166,23 +6353,15 @@ final class api {
         $sql = "SELECT n.*, c.fullname AS coursename,
                        u.firstname, u.lastname,
                        maac.firstname AS maacfirstname, maac.lastname AS maaclastname,
-                       (SELECT COUNT(1)
-                          FROM {spotaward_nomination_items} ni
-                         WHERE ni.nominationid = n.id) AS totalitems,
-                       COALESCE((SELECT SUM(CASE WHEN ni.status IN ('ssteamprogress', 'rejected', 'closed') THEN 1 ELSE 0 END)
-                          FROM {spotaward_nomination_items} ni
-                         WHERE ni.nominationid = n.id), 0) AS revieweditems,
-                       (SELECT COUNT(1)
-                          FROM {files} f
-                         WHERE f.contextid = :syscontextid
-                           AND f.component = 'local_spotaward'
-                           AND f.filearea = 'certificates'
-                           AND f.itemid = n.id
-                           AND f.filename <> '.') AS certificatesexist
+                       COALESCE(nis.totalitems, 0) AS totalitems,
+                       COALESCE(nis.revieweditems, 0) AS revieweditems,
+                       COALESCE(cfs.certificatesexist, 0) AS certificatesexist
                   FROM {spotaward_nominations} n
                   JOIN {course} c ON c.id = n.courseid
                   JOIN {user} u ON u.id = n.nominatorid
              LEFT JOIN {user} maac ON maac.id = n.maacexecutiveid
+             LEFT JOIN (" . self::get_dashboard_nomination_item_stats_sql() . ") nis ON nis.nominationid = n.id
+             LEFT JOIN (" . self::get_dashboard_certificate_stats_sql() . ") cfs ON cfs.nominationid = n.id
                  WHERE {$where}
                ORDER BY n.timecreated DESC";
 
@@ -6281,7 +6460,34 @@ final class api {
         return $counts;
     }
 
+    /**
+     * Build the SQL used to aggregate nomination item counts per nomination.
+     *
+     * @return string
+     */
+    private static function get_dashboard_nomination_item_stats_sql(): string {
+        return "SELECT ni.nominationid,
+                       COUNT(1) AS totalitems,
+                       COALESCE(SUM(CASE WHEN ni.status IN ('ssteamprogress', 'rejected', 'closed') THEN 1 ELSE 0 END), 0) AS revieweditems
+                  FROM {spotaward_nomination_items} ni
+              GROUP BY ni.nominationid";
+    }
 
+    /**
+     * Build the SQL used to aggregate certificate file counts per nomination.
+     *
+     * @return string
+     */
+    private static function get_dashboard_certificate_stats_sql(): string {
+        return "SELECT f.itemid AS nominationid,
+                       COUNT(1) AS certificatesexist
+                  FROM {files} f
+                 WHERE f.contextid = :syscontextid
+                   AND f.component = 'local_spotaward'
+                   AND f.filearea = 'certificates'
+                   AND f.filename <> '.'
+              GROUP BY f.itemid";
+    }
 
     /**
      * Get manager dashboard data.
@@ -6338,24 +6544,16 @@ final class api {
                        mentor.firstname AS mentorfirstname, mentor.lastname AS mentorlastname,
                        pm.firstname AS pmfirstname, pm.lastname AS pmlastname,
                        maac.firstname AS maacfirstname, maac.lastname AS maaclastname,
-                       (SELECT COUNT(1)
-                          FROM {spotaward_nomination_items} ni
-                         WHERE ni.nominationid = n.id) AS totalitems,
-                       COALESCE((SELECT SUM(CASE WHEN ni.status IN ('ssteamprogress', 'rejected', 'closed') THEN 1 ELSE 0 END)
-                          FROM {spotaward_nomination_items} ni
-                         WHERE ni.nominationid = n.id), 0) AS revieweditems,
-                       (SELECT COUNT(1)
-                          FROM {files} f
-                         WHERE f.contextid = :syscontextid
-                           AND f.component = 'local_spotaward'
-                           AND f.filearea = 'certificates'
-                           AND f.itemid = n.id
-                           AND f.filename <> '.') AS certificatesexist
+                       COALESCE(nis.totalitems, 0) AS totalitems,
+                       COALESCE(nis.revieweditems, 0) AS revieweditems,
+                       COALESCE(cfs.certificatesexist, 0) AS certificatesexist
                   FROM {spotaward_nominations} n
                   JOIN {course} c ON c.id = n.courseid
                   JOIN {user} mentor ON mentor.id = n.nominatorid
                   JOIN {user} pm ON pm.id = n.programmanagerid
              LEFT JOIN {user} maac ON maac.id = n.maacexecutiveid
+             LEFT JOIN (" . self::get_dashboard_nomination_item_stats_sql() . ") nis ON nis.nominationid = n.id
+             LEFT JOIN (" . self::get_dashboard_certificate_stats_sql() . ") cfs ON cfs.nominationid = n.id
                   {$combinedsql}
                ORDER BY n.timecreated DESC";
 
@@ -6418,12 +6616,11 @@ final class api {
         $sql = "SELECT n.id, n.courseid, n.maacexecutiveid, n.status, n.adminsharedtime, n.admindownloadedtime,
                        c.fullname AS coursename,
                        maac.firstname AS maacfirstname, maac.lastname AS maaclastname,
-                       (SELECT COUNT(1)
-                          FROM {spotaward_nomination_items} ni
-                         WHERE ni.nominationid = n.id) AS studentcount
+                       COALESCE(nis.totalitems, 0) AS studentcount
                   FROM {spotaward_nominations} n
                   JOIN {course} c ON c.id = n.courseid
              LEFT JOIN {user} maac ON maac.id = n.maacexecutiveid
+             LEFT JOIN (" . self::get_dashboard_nomination_item_stats_sql() . ") nis ON nis.nominationid = n.id
                  WHERE " . implode(' AND ', $where) . "
               ORDER BY n.adminsharedtime DESC, n.id DESC";
 
@@ -6548,6 +6745,88 @@ final class api {
     }
 
     /**
+     * Optimize a merged PDF file with Ghostscript when available.
+     *
+     * @param string $pdfpath
+     * @param string $outputfilename
+     * @return string
+     */
+    private static function optimize_pdf_file_with_ghostscript(string $pdfpath, string $outputfilename): string {
+        global $CFG;
+
+        if ($pdfpath === '' || !is_file($pdfpath)) {
+            return '';
+        }
+
+        $binary = self::find_ghostscript_binary();
+        if ($binary === '') {
+            return '';
+        }
+
+        check_dir_exists($CFG->tempdir . '/spotaward_gs_optimize');
+        $tempdir = make_temp_directory('spotaward_gs_optimize');
+        $outputpath = tempnam($tempdir, 'spotawardout');
+        if ($outputpath === false) {
+            return '';
+        }
+
+        $pdfoutput = $outputpath . '.pdf';
+        @rename($outputpath, $pdfoutput);
+
+        $cmd = escapeshellarg($binary) .
+            ' -sDEVICE=pdfwrite' .
+            ' -dCompatibilityLevel=1.4' .
+            ' -dNOPAUSE -dBATCH -dSAFER -dQUIET' .
+            ' -dDetectDuplicateImages=true' .
+            ' -dCompressFonts=true' .
+            ' -dSubsetFonts=true' .
+            ' -dAutoFilterColorImages=false' .
+            ' -dAutoFilterGrayImages=false' .
+            ' -dColorImageFilter=/DCTEncode' .
+            ' -dGrayImageFilter=/DCTEncode' .
+            ' -dJPEGQ=85' .
+            ' -dDownsampleColorImages=false' .
+            ' -dDownsampleGrayImages=false' .
+            ' -dDownsampleMonoImages=false' .
+            ' -sOutputFile=' . escapeshellarg($pdfoutput) . ' ' .
+            escapeshellarg($pdfpath);
+
+        $exitcode = self::run_pdf_optimization_command($cmd);
+        if ($exitcode !== 0 || !is_file($pdfoutput)) {
+            if (is_file($pdfoutput)) {
+                @unlink($pdfoutput);
+            }
+            return '';
+        }
+
+        $optimizedsize = filesize($pdfoutput);
+        $originalsize = filesize($pdfpath);
+        if ($optimizedsize === false || $originalsize === false || $optimizedsize > $originalsize) {
+            @unlink($pdfoutput);
+            return '';
+        }
+
+        return $pdfoutput;
+    }
+
+    /**
+     * Require access to submission detail and downstream export screens.
+     *
+     * Nominators can still view their own history in index.php, but should not
+     * enter the detailed review/export workflow unless they also hold one of the
+     * downstream workflow roles for the same nomination.
+     *
+     * @param stdClass $nomination
+     * @param int $userid
+     * @return void
+     */
+    public static function require_submission_details_access(stdClass $nomination, int $userid): void {
+        if (!self::can_access_submission_details($nomination, $userid)) {
+            throw new moodle_exception('notauthorised', 'local_spotaward');
+        }
+    }
+
+    /**
      * Check if user can access nomination.
      *
      * @param stdClass $nomination
@@ -6605,6 +6884,37 @@ final class api {
             if (!in_array((string)$item->status, ['pending', 'underreview'], true)) {
                 return true;
             }
+        }
+
+        return false;
+    }
+
+    /**
+     * Check if user can access detailed nomination workflow screens.
+     *
+     * @param stdClass $nomination
+     * @param int $userid
+     * @return bool
+     */
+    public static function can_access_submission_details(stdClass $nomination, int $userid): bool {
+        if (is_siteadmin($userid)) {
+            return true;
+        }
+
+        if ($nomination->programmanagerid == $userid) {
+            return true;
+        }
+
+        if (!empty($nomination->maacexecutiveid) && (int)$nomination->maacexecutiveid === $userid) {
+            return true;
+        }
+
+        if (!empty($nomination->adminsharedtime) && self::is_admin($userid)) {
+            return true;
+        }
+
+        if (self::is_manager($userid)) {
+            return true;
         }
 
         return false;

@@ -10,7 +10,7 @@ require_login();
 
 $id = required_param('id', PARAM_INT);
 $nomination = api::get_nomination($id);
-api::require_nomination_access($nomination, $USER->id);
+api::require_submission_details_access($nomination, $USER->id);
 
 $course = get_course($nomination->courseid);
 $programmanager = core_user::get_user($nomination->programmanagerid);

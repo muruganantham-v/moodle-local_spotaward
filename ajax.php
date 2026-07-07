@@ -28,7 +28,7 @@ if ($action === 'studentreport') {
     $itemid = required_param('itemid', PARAM_INT);
     $item = $DB->get_record('spotaward_nomination_items', ['id' => $itemid], '*', MUST_EXIST);
     $nomination = api::get_nomination((int)$item->nominationid);
-    api::require_nomination_access($nomination, $USER->id);
+    api::require_submission_details_access($nomination, $USER->id);
 
     $student = core_user::get_user($item->studentid, '*', MUST_EXIST);
     $course = get_course($nomination->courseid);

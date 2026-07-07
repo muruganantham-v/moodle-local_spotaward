@@ -69,6 +69,14 @@ $settings->add(new admin_setting_configselect(
 ));
 
 $settings->add(new admin_setting_configselect(
+    'local_spotaward/admin_role',
+    get_string('admin_role_setting', 'local_spotaward'),
+    get_string('admin_role_setting_desc', 'local_spotaward'),
+    'admin',
+    $roleoptions
+));
+
+$settings->add(new admin_setting_configselect(
     'local_spotaward/ss_team_role',
     get_string('ss_team_role_setting', 'local_spotaward'),
     get_string('ss_team_role_setting_desc', 'local_spotaward'),
@@ -98,20 +106,6 @@ $settings->add(new admin_setting_configselect(
         get_string('nomination_course_shortnames_setting_desc', 'local_spotaward'),
         '',
         PARAM_RAW_TRIMMED
-    ));
-
-    $settings->add(new admin_setting_heading(
-        'local_spotaward/notification_team_heading',
-        get_string('notificationteamsettings', 'local_spotaward'),
-        ''
-    ));
-
-    $settings->add(new admin_setting_configselect(
-        'local_spotaward/admin_role',
-        get_string('admin_role_setting', 'local_spotaward'),
-        get_string('admin_role_setting_desc', 'local_spotaward'),
-        'admin',
-        $roleoptions
     ));
 
     $settings->add(new admin_setting_heading(

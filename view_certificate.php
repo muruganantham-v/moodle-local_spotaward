@@ -40,7 +40,7 @@ if (!in_array($nomination->status, ['ssteamprogress', 'closed'], true)) {
 }
 
 require_once(__DIR__ . '/classes/local/api.php');
-local_spotaward\local\api::require_nomination_access($nomination, $USER->id);
+local_spotaward\local\api::require_submission_details_access($nomination, $USER->id);
 
 $cancertificateaccess = is_siteadmin() || local_spotaward\local\api::is_manager($USER->id) ||
     local_spotaward\local\api::is_assigned_maac_executive($nomination, (int)$USER->id);
@@ -71,10 +71,11 @@ if ($userid > 0) {
         throw new moodle_exception('certificatenotfound', 'local_spotaward');
     }
 
-    send_stored_file($file, 0, 0, true, [
+    $forcedownload = $action === 'download';
+    send_stored_file($file, 0, 0, $forcedownload, [
         'filename' => $filename,
         'dontclose' => false,
-        'display' => $action === 'download' ? 'attachment' : 'inline'
+        'display' => $forcedownload ? 'attachment' : 'inline'
     ]);
     exit;
 } else {
@@ -86,31 +87,38 @@ if ($userid > 0) {
         throw new moodle_exception('nocertificates', 'local_spotaward');
     }
 
-    $content = local_spotaward\local\api::merge_stored_pdf_files($files, $filename);
-
-    if ($action === 'download') {
-        header('Content-Type: application/pdf');
-        header('Content-Disposition: attachment; filename="' . $filename . '"');
-        header('Cache-Control: public, must-revalidate, max-age=0');
-        header('Pragma: public');
-        header('Expires: Sat, 26 Jul 1997 05:00:00 GMT');
-        header('Last-Modified: ' . gmdate('D, d M Y H:i:s') . ' GMT');
-        header('Content-Description: File Transfer');
-        header('Content-Transfer-Encoding: binary');
-        header('Content-Length: ' . strlen($content));
-    } else {
-        header('Content-Type: application/pdf');
-        header('Content-disposition: inline; filename="' . $filename . '"');
-        header('Cache-Control: public, must-revalidate, max-age=0');
-        header('Pragma: public');
-        header('Expires: Sat, 26 Jul 1997 05:00:00 GMT');
-        header('Last-Modified: ' . gmdate('D, d M Y H:i:s') . ' GMT');
-        header('Content-Length: ' . strlen($content));
+    $mergedpath = local_spotaward\local\api::merge_stored_pdf_files_to_temp_path($files, $filename);
+    if ($mergedpath === '' || !is_file($mergedpath)) {
+        throw new moodle_exception('nocertificates', 'local_spotaward');
     }
 
-    while (ob_get_level()) {
-        ob_end_clean();
+    try {
+        if ($action === 'download') {
+            header('Content-Type: application/pdf');
+            header('Content-Disposition: attachment; filename="' . $filename . '"');
+            header('Cache-Control: public, must-revalidate, max-age=0');
+            header('Pragma: public');
+            header('Expires: Sat, 26 Jul 1997 05:00:00 GMT');
+            header('Last-Modified: ' . gmdate('D, d M Y H:i:s') . ' GMT');
+            header('Content-Description: File Transfer');
+            header('Content-Transfer-Encoding: binary');
+            header('Content-Length: ' . filesize($mergedpath));
+        } else {
+            header('Content-Type: application/pdf');
+            header('Content-Disposition: inline; filename="' . $filename . '"');
+            header('Cache-Control: public, must-revalidate, max-age=0');
+            header('Pragma: public');
+            header('Expires: Sat, 26 Jul 1997 05:00:00 GMT');
+            header('Last-Modified: ' . gmdate('D, d M Y H:i:s') . ' GMT');
+            header('Content-Length: ' . filesize($mergedpath));
+        }
+
+        while (ob_get_level()) {
+            ob_end_clean();
+        }
+        readfile($mergedpath);
+        die();
+    } finally {
+        @unlink($mergedpath);
     }
-    echo $content;
-    die();
 }

@@ -25,7 +25,7 @@ $selecteditemscsv = optional_param('selecteditemscsv', '', PARAM_TEXT);
 $selecteditemids = array_values(array_unique(optional_param_array('selecteditems', [], PARAM_INT)));
 
 $nomination = api::get_nomination($id);
-api::require_nomination_access($nomination, $USER->id);
+api::require_submission_details_access($nomination, $USER->id);
 
 $systemcontext = context_system::instance();
 $PAGE->set_context($systemcontext);
