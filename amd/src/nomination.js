@@ -67,12 +67,8 @@ define([], function() {
             }
 
             function setActionButtonsEnabled(enabled) {
-                if (clearBtn) {
-                    clearBtn.disabled = !enabled;
-                }
-                if (submitBtn) {
-                    submitBtn.disabled = !enabled;
-                }
+                // This function is kept for backward compatibility if needed, 
+                // but we handle buttons individually in updateActionButtons now.
             }
 
             function getSelectValues(select) {
@@ -146,7 +142,16 @@ define([], function() {
 
             function updateActionButtons() {
                 var state = collectFormState();
-                setActionButtonsEnabled(hasRecoverableState || dirty || hasMeaningfulContent(state));
+                var hasContent = hasMeaningfulContent(state);
+                var canClear = hasRecoverableState || dirty || hasContent;
+                var canSubmit = hasRecoverableState && !dirty;
+                
+                if (clearBtn) {
+                    clearBtn.disabled = !canClear;
+                }
+                if (submitBtn) {
+                    submitBtn.disabled = !canSubmit;
+                }
             }
 
             function showSavedStatus() {
@@ -429,6 +434,16 @@ define([], function() {
                 if (typeof window.localSpotawardStartSuccessOverlay === 'function') {
                     window.localSpotawardStartSuccessOverlay(submitBtn.value || submitBtn.textContent || 'Submit');
                 }
+                
+                // Ensure the submit button name is always passed to the server
+                if (!form.querySelector('input[type="hidden"][name="' + submitBtn.name + '"]')) {
+                    var hiddenInput = document.createElement('input');
+                    hiddenInput.type = 'hidden';
+                    hiddenInput.name = submitBtn.name;
+                    hiddenInput.value = submitBtn.value || '1';
+                    form.appendChild(hiddenInput);
+                }
+
                 if (form.requestSubmit) {
                     form.requestSubmit(submitBtn);
                     return;

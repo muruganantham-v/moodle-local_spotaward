@@ -40,12 +40,33 @@ if (!in_array($nomination->status, ['ssteamprogress', 'closed'], true)) {
 }
 
 require_once(__DIR__ . '/classes/local/api.php');
-local_spotaward\local\api::require_submission_details_access($nomination, $USER->id);
 
-$cancertificateaccess = is_siteadmin() || local_spotaward\local\api::is_manager($USER->id) ||
-    local_spotaward\local\api::is_assigned_maac_executive($nomination, (int)$USER->id);
-if (!$cancertificateaccess) {
-    throw new moodle_exception('notauthorised', 'local_spotaward');
+$isowncertificate = false;
+if ($userid > 0 && (int)$userid === (int)$USER->id && $nomination->status === 'closed') {
+    if ($itemid > 0) {
+        $isowncertificate = $DB->record_exists('spotaward_nomination_items', [
+            'id' => $itemid,
+            'nominationid' => $nominationid,
+            'studentid' => $userid,
+            'status' => 'closed'
+        ]);
+    } else {
+        $isowncertificate = $DB->record_exists('spotaward_nomination_items', [
+            'nominationid' => $nominationid,
+            'studentid' => $userid,
+            'status' => 'closed'
+        ]);
+    }
+}
+
+if (!$isowncertificate) {
+    local_spotaward\local\api::require_submission_details_access($nomination, $USER->id);
+
+    $cancertificateaccess = is_siteadmin() || local_spotaward\local\api::is_manager($USER->id) ||
+        local_spotaward\local\api::is_assigned_maac_executive($nomination, (int)$USER->id);
+    if (!$cancertificateaccess) {
+        throw new moodle_exception('notauthorised', 'local_spotaward');
+    }
 }
 
 local_spotaward\local\api::ensure_nomination_certificates_generated($nominationid);
@@ -72,6 +93,9 @@ if ($userid > 0) {
     }
 
     $forcedownload = $action === 'download';
+    while (ob_get_level()) {
+        ob_end_clean();
+    }
     send_stored_file($file, 0, 0, $forcedownload, [
         'filename' => $filename,
         'dontclose' => false,

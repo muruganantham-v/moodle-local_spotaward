@@ -11,7 +11,7 @@
                 <FIELD NAME="maacexecutiveid" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"/>
                 <FIELD NAME="courseid" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"/>
                 <FIELD NAME="modulename" TYPE="char" LENGTH="255" NOTNULL="true" DEFAULT=""/>
-                <FIELD NAME="awardcategory" TYPE="char" LENGTH="255" NOTNULL="true" DEFAULT=""/>
+                <FIELD NAME="awardcategory" TYPE="text" NOTNULL="false"/>
                 <FIELD NAME="professional" TYPE="char" LENGTH="255" NOTNULL="true" DEFAULT=""/>
                 <FIELD NAME="awarddescription" TYPE="text" NOTNULL="false"/>
                 <FIELD NAME="studentcount" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"/>

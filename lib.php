@@ -1925,3 +1925,88 @@ function local_spotaward_submission_report_modal_js(moodle_url $ajaxurl): string
 })();
 JS;
 }
+
+/**
+ * Safe fullname wrapper to prevent missing fields notices.
+ *
+ * @param string $firstname
+ * @param string $lastname
+ * @return string
+ */
+function local_spotaward_fullname(string $firstname, string $lastname): string {
+    $user = (object)[
+        'firstname' => $firstname,
+        'lastname' => $lastname,
+        'firstnamephonetic' => '',
+        'lastnamephonetic' => '',
+        'middlename' => '',
+        'alternatename' => '',
+    ];
+    return fullname($user);
+}
+
+/**
+ * Add spot award certificates to the user profile.
+ *
+ * @param core_user\output\myprofile\tree $tree Tree object
+ * @param stdClass $user user object
+ * @param bool $iscurrentuser
+ * @param stdClass|null $course Course object
+ * @return void
+ */
+function local_spotaward_myprofile_navigation(core_user\output\myprofile\tree $tree, $user, $iscurrentuser, $course) {
+    global $DB;
+
+    if (!$iscurrentuser && !is_siteadmin()) {
+        return;
+    }
+
+    $addnodes = [];
+    $sql = "SELECT items.id AS itemid, nom.id AS nominationid, nom.courseid, nom.modulename, c.fullname, items.awardcategory 
+              FROM {spotaward_nomination_items} items
+              JOIN {spotaward_nominations} nom ON nom.id = items.nominationid
+              JOIN {course} c ON c.id = nom.courseid
+             WHERE items.studentid = :userid
+               AND items.status = 'closed'
+               AND nom.status = 'closed'";
+    
+    $params = ['userid' => $user->id];
+    if ($course) {
+        $sql .= " AND nom.courseid = :courseid";
+        $params['courseid'] = $course->id;
+    }
+
+    $certificates = $DB->get_records_sql($sql, $params);
+
+    if ($certificates) {
+        $seen = [];
+        foreach ($certificates as $cert) {
+            $label = $cert->modulename . ' : ' . $cert->awardcategory;
+            
+            if (isset($seen[$label])) {
+                continue;
+            }
+            $seen[$label] = true;
+
+            $url = new moodle_url('/local/spotaward/view_certificate.php', [
+                'nominationid' => $cert->nominationid, 
+                'userid' => $user->id,
+                'itemid' => $cert->itemid,
+                'sesskey' => sesskey()
+            ]);
+
+            $addnodes[] = new core_user\output\myprofile\node('spotawards', 'spotaward-' . $cert->itemid,
+                $label, null, $url);
+        }
+    }
+
+    if (!empty($addnodes)) {
+        $myname = get_string('spotaward', 'local_spotaward');
+        $mobilecat = new core_user\output\myprofile\category('spotawards', $myname, 'contact');
+        $tree->add_category($mobilecat);
+
+        foreach ($addnodes as $node) {
+            $tree->add_node($node);
+        }
+    }
+}

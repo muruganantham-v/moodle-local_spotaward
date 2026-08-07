@@ -34,10 +34,18 @@ class cert_field_map {
             ['key' => 'program_manager_email', 'label' => get_string('field_program_manager_email', 'local_spotaward')],
             ['key' => 'student_institution', 'label' => get_string('field_student_institution', 'local_spotaward')],
             ['key' => 'student_department', 'label' => get_string('field_student_department', 'local_spotaward')],
+            ['key' => 'program_manager_signature', 'label' => get_string('field_program_manager_signature', 'local_spotaward')],
+            ['key' => 'nominator_signature', 'label' => get_string('field_nominator_signature', 'local_spotaward')],
+            ['key' => 'ss_team_signature', 'label' => get_string('field_ss_team_signature', 'local_spotaward')],
         ];
     }
 
     public static function get_data($course, $student, $nomination, $item, $nominator, $programmanager): array {
+        $ssteam = !empty($nomination->maacexecutiveid)
+            ? \core_user::get_user((int)$nomination->maacexecutiveid)
+            : null;
+        $ssteamname = $ssteam ? fullname($ssteam) : '';
+
         return [
             'student_name' => fullname($student),
             'student_firstname' => $student->firstname ?? '',
@@ -60,6 +68,9 @@ class cert_field_map {
             'program_manager_email' => $programmanager->email ?? '',
             'student_institution' => $student->institution ?? '',
             'student_department' => $student->department ?? '',
+            'program_manager_signature' => fullname($programmanager),
+            'nominator_signature' => fullname($nominator),
+            'ss_team_signature' => $ssteamname,
         ];
     }
 
@@ -132,6 +143,24 @@ class cert_field_map {
         $replacements['{$SPOTAWARD->total_students_count}'] = $data['total_students_count'];
         $replacements['{$SPOTAWARD->nominated_by}'] = $data['nominated_by'];
         $replacements['{$SPOTAWARD->issued_date}'] = $data['issued_date'];
+
+        // Custom signature field replacements
+        $sigfont = strtolower(constants::signature_font());
+        $pm_sig_html = '<span style="font-family: \'' . $sigfont . '\';">' . s($data['program_manager_signature']) . '</span>';
+        $nominator_sig_html = '<span style="font-family: \'' . $sigfont . '\';">' . s($data['nominator_signature']) . '</span>';
+        $ssteam_sig_html = '<span style="font-family: \'' . $sigfont . '\';">' . s($data['ss_team_signature']) . '</span>';
+
+        $replacements['{$SPOTAWARD->program_manager_signature}'] = $pm_sig_html;
+        $replacements['{$spotaward->program_manager_signature}'] = $pm_sig_html;
+        $replacements['{program_manager_signature}'] = $pm_sig_html;
+
+        $replacements['{$SPOTAWARD->nominator_signature}'] = $nominator_sig_html;
+        $replacements['{$spotaward->nominator_signature}'] = $nominator_sig_html;
+        $replacements['{nominator_signature}'] = $nominator_sig_html;
+
+        $replacements['{$SPOTAWARD->ss_team_signature}'] = $ssteam_sig_html;
+        $replacements['{$spotaward->ss_team_signature}'] = $ssteam_sig_html;
+        $replacements['{ss_team_signature}'] = $ssteam_sig_html;
         
         return $replacements;
     }

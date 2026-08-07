@@ -285,6 +285,9 @@ $string['field_nominator_email'] = 'Nominator Email';
 $string['field_program_manager_email'] = 'Program Manager Email';
 $string['field_student_institution'] = 'Student Institution';
 $string['field_student_department'] = 'Student Department';
+$string['field_program_manager_signature'] = 'Program Manager Signature';
+$string['field_nominator_signature'] = 'Nominator Signature';
+$string['field_ss_team_signature'] = 'SS Team Signature';
 $string['field_mapping_help'] = 'Use these placeholders in your certificate template HTML to dynamically insert data:';
 $string['available_fields'] = 'Available Certificate Fields';
 $string['field_label'] = 'Field Label';
@@ -496,3 +499,6 @@ $string['graderange'] = 'Grade range';
 $string['studentscount'] = 'Students';
 $string['suggestedstudents'] = 'Suggested students';
 $string['suggestedbadge'] = 'Suggested';
+$string['signature_font_setting'] = 'Signature Font';
+$string['signature_font_setting_desc'] = 'Select the font style to use for signatures on the certificates.';
+

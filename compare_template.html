@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Spot Awards - Student Recognition Details</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#1a1a1a;
+    --label-gray:#4d4d4d;
+    --sub-gray:#8a8a8a;
+    --box-border:#cfcfcf;
+    --table-border:#e3e3e3;
+    --stripe:#f4f3f3;
+    --footer-gray:#9a9a9a;
+    --grad-a:#2b2a5c;
+    --grad-b:#d6026f;
+  }
+  *{ box-sizing:border-box; margin:0; padding:0; }
+  html,body{ background:#e7e7ea; }
+  body{
+    font-family:'Poppins', sans-serif;
+    display:flex;
+    justify-content:center;
+    padding:28px 12px;
+  }
+  .page{
+    width:210mm;
+    min-height:297mm;
+    background:#ffffff;
+    padding:16mm 16mm 12mm 16mm;
+    box-shadow:0 6px 30px rgba(0,0,0,0.10);
+    display:flex;
+    flex-direction:column;
+    position:relative;
+  }
+  .page-label {
+    position: absolute; top: -25px; left: 0;
+    background: #d32f2f; color: white; padding: 4px 12px;
+    font-weight: 700; font-size: 13px; border-radius: 4px 4px 0 0;
+  }
+
+  /* ---- Header / logo ---- */
+  .header{
+    display:flex;
+    justify-content:flex-end;
+    margin-bottom:26px;
+  }
+  .logo{ display:flex; align-items:center; }
+  .logo img{ width:128px; height:28px; display:block; }
+
+  /* ---- Title ---- */
+  .title-block{
+    border-bottom:1.5px solid var(--ink);
+    padding-bottom:16px;
+    margin-bottom:22px;
+  }
+  h1.title{
+    font-size:29px;
+    font-weight:700;
+    letter-spacing:0.5px;
+    color:var(--ink);
+  }
+  p.subtitle{
+    font-size:13.5px;
+    font-weight:400;
+    color:var(--sub-gray);
+    margin-top:4px;
+  }
+
+  /* ---- Field grid ---- */
+  .field-grid{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:14px 22px;
+    margin-bottom:30px;
+  }
+  .field-box{
+    border:1.5px solid var(--box-border);
+    border-radius:8px;
+    padding:14px 16px;
+    display:flex;
+    align-items:center;
+    gap:6px;
+  }
+  .field-box label{
+    font-size:12.5px;
+    font-weight:500;
+    color:var(--label-gray);
+    white-space:nowrap;
+  }
+  .field-box input{
+    border:none;
+    outline:none;
+    background:transparent;
+    flex:1;
+    min-width:0;
+    font-family:'Poppins', sans-serif;
+    font-size:12.5px;
+    color:var(--ink);
+  }
+  .field-box input::placeholder{ color:#c9c9c9; }
+
+  /* ---- Section title ---- */
+  h2.section-title{
+    font-size:15px;
+    font-weight:700;
+    color:var(--ink);
+    margin-bottom:12px;
+  }
+
+  /* ---- Table ---- */
+  table{
+    width:100%;
+    border-collapse:collapse;
+    margin-bottom:18px;
+  }
+  th{
+    text-align:left;
+    font-size:11.5px;
+    font-weight:700;
+    color:var(--ink);
+    padding:13px 14px;
+    border:1px solid var(--table-border);
+    background:#fff;
+  }
+  td{
+    font-size:11.5px;
+    color:var(--ink);
+    padding:13px 14px;
+    border:1px solid var(--table-border);
+    height:14px;
+  }
+  tbody tr:nth-child(even){ background:var(--stripe); }
+  td[contenteditable]:focus, .field-box input:focus{ outline:none; }
+  th:first-child, td.sino{ text-align:center; width:7.5%; font-weight:600; }
+  th:nth-child(2), td:nth-child(2){ width:18.8%; }
+  th:nth-child(3), td:nth-child(3){ width:18.7%; }
+  th:nth-child(4), td:nth-child(4){ width:27.5%; }
+  th:nth-child(5), td:nth-child(5){ width:27.5%; }
+
+  /* ---- Summary box ---- */
+  .summary-box{
+    background:var(--stripe);
+    border:1px solid var(--table-border);
+    border-radius:4px;
+    padding:16px;
+    min-height:78px;
+    margin-bottom:24px;
+  }
+  .summary-box label{
+    font-size:12.5px;
+    font-weight:500;
+    color:var(--label-gray);
+  }
+  .summary-box .fill{
+    margin-top:8px;
+    font-size:12px;
+    min-height:36px;
+    outline:none;
+    color:var(--ink);
+  }
+
+  /* ---- Footer ---- */
+  .footer{
+    margin-top:auto;
+    display:flex;
+    justify-content:space-between;
+    border-top:1px solid var(--table-border);
+    padding-top:10px;
+    font-size:9.5px;
+    color:var(--footer-gray);
+  }
+
+  @media print{
+    html,body{ background:#fff; }
+    body{ padding:0; }
+    .page{ box-shadow:none; width:auto; min-height:auto; }
+  }
+</style>
+</head>
+<body>
+  <div class="page">
+    <div class="page-label">TARGET TEMPLATE (New Template with Logo)</div>
+
+    <div class="header">
+      <div class="logo">
+        <img src="pix/emertxe_logo_cropped.png" alt="Emertxe Logo" />
+      </div>
+    </div>
+
+    <div class="title-block">
+      <h1 class="title">SPOT AWARDS</h1>
+      <p class="subtitle">Student Recognition Details</p>
+    </div>
+
+    <div class="field-grid">
+      <div class="field-box"><label>Batch Name :</label><input type="text" value="25050+26003"></div>
+      <div class="field-box"><label>Nominated By :</label><input type="text" value="John Doe"></div>
+
+      <div class="field-box"><label>Course Type :</label><input type="text" value="ECEP"></div>
+      <div class="field-box"><label>Approved By :</label><input type="text" value="Jane Smith"></div>
+
+      <div class="field-box"><label>Module Name :</label><input type="text" value="Embedded C"></div>
+      <div class="field-box"><label>Issued By :</label><input type="text" value="Admin User"></div>
+
+      <div class="field-box"><label>Recognition Date :</label><input type="text" value="15 July 2026"></div>
+      <div class="field-box"><label>Total Students :</label><input type="text" value="7"></div>
+    </div>
+
+    <h2 class="section-title">Award Recipient Details</h2>
+
+    <table>
+      <thead>
+        <tr>
+          <th>SI.NO.</th>
+          <th>Student Name</th>
+          <th>Registration ID</th>
+          <th>Email ID</th>
+          <th>Award Category</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td class="sino">01</td><td contenteditable="true">Student One</td><td contenteditable="true">REG001</td><td contenteditable="true">student1@example.com</td><td contenteditable="true">Excellence</td></tr>
+        <tr><td class="sino">02</td><td contenteditable="true">Student Two</td><td contenteditable="true">REG002</td><td contenteditable="true">student2@example.com</td><td contenteditable="true">Innovation</td></tr>
+        <tr><td class="sino">03</td><td contenteditable="true">Student Three</td><td contenteditable="true">REG003</td><td contenteditable="true">student3@example.com</td><td contenteditable="true">Excellence</td></tr>
+        <tr><td class="sino">04</td><td contenteditable="true">Student Four</td><td contenteditable="true">REG004</td><td contenteditable="true">student4@example.com</td><td contenteditable="true">Leadership</td></tr>
+        <tr><td class="sino">05</td><td contenteditable="true">Student Five</td><td contenteditable="true">REG005</td><td contenteditable="true">student5@example.com</td><td contenteditable="true">Excellence</td></tr>
+        <tr><td class="sino">06</td><td contenteditable="true">Student Six</td><td contenteditable="true">REG006</td><td contenteditable="true">student6@example.com</td><td contenteditable="true">Innovation</td></tr>
+        <tr><td class="sino">07</td><td contenteditable="true">Student Seven</td><td contenteditable="true">REG007</td><td contenteditable="true">student7@example.com</td><td contenteditable="true">Leadership</td></tr>
+      </tbody>
+    </table>
+
+    <div class="summary-box">
+      <label>Award Category Summary :</label>
+      <div class="fill" contenteditable="true">Excellence (3), Innovation (2), Leadership (2)</div>
+    </div>
+
+    <div class="footer">
+      <span>Spot Awards - Student Recognition Details</span>
+      <span>Page 1</span>
+    </div>
+
+  </div>
+</body>
+</html>

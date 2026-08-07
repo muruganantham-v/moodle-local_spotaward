@@ -419,5 +419,18 @@ function xmldb_local_spotaward_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026070101, 'local', 'spotaward');
     }
 
+    if ($oldversion < 2026070801) {
+        $dbman = $DB->get_manager();
+        $nominationtable = new xmldb_table('spotaward_nominations');
+        $awardcategoryfield = new xmldb_field('awardcategory', XMLDB_TYPE_TEXT, null, null, null, null, null,
+            'modulename');
+
+        if ($dbman->field_exists($nominationtable, $awardcategoryfield)) {
+            $dbman->change_field_type($nominationtable, $awardcategoryfield);
+        }
+
+        upgrade_plugin_savepoint(true, 2026070801, 'local', 'spotaward');
+    }
+
     return true;
 }

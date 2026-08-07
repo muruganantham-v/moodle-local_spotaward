@@ -192,7 +192,7 @@ if ($isadmin && optional_param('downloadadmincertificates', 0, PARAM_INT) && con
     exit;
 }
 
-if (($ismanager || $isssteam) && optional_param('sharecertificates', 0, PARAM_INT) && require_sesskey()) {
+if (($ismanager || $isssteam) && optional_param('sharecertificates', 0, PARAM_INT) && confirm_sesskey()) {
     $sharenomid = optional_param('sharecertificates', 0, PARAM_INT);
 
     $nomination = api::get_nomination($sharenomid);
@@ -419,6 +419,17 @@ if ($view === 'nominator' && $isnominator) {
     } else {
         $historyrows = [];
         foreach (api::get_nominator_submissions($USER->id) as $submission) {
+            $actions = '';
+            $actions .= html_writer::link(
+                new moodle_url('/local/spotaward/submission.php', ['id' => $submission->id]),
+                'View details'
+            );
+            $actions .= html_writer::empty_tag('br');
+            $actions .= html_writer::link(
+                new moodle_url('/local/spotaward/download_csv.php', ['id' => $submission->id]),
+                'Download CSV'
+            );
+
             $historyrows[] = [
                 'id' => $submission->id,
                 'submitteddate' => userdate($submission->timecreated),
@@ -426,6 +437,7 @@ if ($view === 'nominator' && $isnominator) {
                 'coursename' => format_string($submission->coursename),
                 'module' => s($submission->modulename),
                 'statuslabel' => local_spotaward_render_badge(get_string($submission->status, 'local_spotaward')),
+                'actions' => $actions,
             ];
         }
         echo $output->submission_history($historyrows);
@@ -473,8 +485,8 @@ if ($view === 'programmanager' && $ispm) {
     $rows = [];
     $dashboard = api::get_program_manager_submissions($USER->id, $section, $page, $dashboardperpage);
     foreach ($dashboard['records'] as $submission) {
-        $mentorname = fullname((object)['firstname' => $submission->firstname, 'lastname' => $submission->lastname]);
-        $maacname = fullname((object)['firstname' => $submission->maacfirstname, 'lastname' => $submission->maaclastname]);
+        $mentorname = local_spotaward_fullname($submission->firstname, $submission->lastname);
+        $maacname = local_spotaward_fullname($submission->maacfirstname, $submission->maaclastname);
         $coursetitle = format_string($submission->coursename);
         $modulename = (string)$submission->modulename;
         $professional = (string)($submission->professional ?? '');
@@ -573,8 +585,8 @@ if ($view === 'ssteam' && $isssteam) {
         $actions = [
             html_writer::link(new moodle_url('/local/spotaward/submission.php', ['id' => $record->id]), get_string('viewdetails', 'local_spotaward')),
         ];
-        $mentorname = fullname((object)['firstname' => $record->mentorfirstname, 'lastname' => $record->mentorlastname]);
-        $pmname = fullname((object)['firstname' => $record->pmfirstname, 'lastname' => $record->pmlastname]);
+        $mentorname = local_spotaward_fullname($record->mentorfirstname, $record->mentorlastname);
+        $pmname = local_spotaward_fullname($record->pmfirstname, $record->pmlastname);
         $coursename = format_string($record->coursename);
         $modulename = (string)$record->modulename;
         $professional = (string)($record->professional ?? '');
@@ -653,6 +665,8 @@ if ($view === 'admin' && $isadmin) {
         ['class' => 'spotaward-subtab' . ($section === 'closed' ? ' is-active' : '')]
     );
     echo html_writer::end_div();
+    
+
 
     $columns = [
         [
@@ -677,10 +691,7 @@ if ($view === 'admin' && $isadmin) {
 
     $rows = [];
     foreach ($records as $record) {
-        $maacname = trim(fullname((object)[
-            'firstname' => $record->maacfirstname ?? '',
-            'lastname' => $record->maaclastname ?? '',
-        ]));
+        $maacname = trim(local_spotaward_fullname($record->maacfirstname ?? '', $record->maaclastname ?? ''));
         $coursename = format_string($record->coursename);
         $timestamp = (int)$record->adminsharedtime;
         $studentcount = (int)($record->studentcount ?? 0);
@@ -818,9 +829,9 @@ if ($view === 'manager' && $ismanager) {
             );
         }
 
-        $mentorname = fullname((object)['firstname' => $record->mentorfirstname, 'lastname' => $record->mentorlastname]);
-        $pmname = fullname((object)['firstname' => $record->pmfirstname, 'lastname' => $record->pmlastname]);
-        $maacname = fullname((object)['firstname' => $record->maacfirstname, 'lastname' => $record->maaclastname]);
+        $mentorname = local_spotaward_fullname($record->mentorfirstname, $record->mentorlastname);
+        $pmname = local_spotaward_fullname($record->pmfirstname, $record->pmlastname);
+        $maacname = local_spotaward_fullname($record->maacfirstname, $record->maaclastname);
         $coursename = format_string($record->coursename);
         $modulename = (string)$record->modulename;
         $professional = (string)($record->professional ?? '');

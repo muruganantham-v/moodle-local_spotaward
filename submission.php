@@ -38,7 +38,7 @@ local_spotaward_require_action_success_overlay();
 $canreview = is_siteadmin() || ((int)$nomination->programmanagerid === (int)$USER->id);
 $cancontinuereview = $canreview && in_array($nomination->status, ['pending', 'underreview'], true);
 $canmanagerapprove = is_siteadmin() || api::is_manager($USER->id);
-$isssteam = api::is_assigned_maac_executive($nomination, (int)$USER->id);
+$isssteam = is_siteadmin() || api::is_assigned_maac_executive($nomination, (int)$USER->id);
 $ispm = (int)$nomination->programmanagerid === (int)$USER->id;
 $cansharetoadmin = is_siteadmin() || api::is_ss_team((int)$USER->id);
 $canviewcertificates = ($canmanagerapprove || $isssteam)

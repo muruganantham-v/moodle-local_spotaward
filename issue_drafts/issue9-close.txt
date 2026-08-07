@@ -1,0 +1,12 @@
+Closing this as already implemented.
+
+What is already present:
+- Client-side CSV export exists in `amd/src/table_tools.js` and the built `amd/build/table_tools.min.js`.
+- The export button is wired through the shared data-table renderer.
+- Export uses the currently visible rows, so it respects the active search/filter state in the table.
+
+Current scope:
+- CSV export is implemented.
+- Native Excel/XLSX export is not implemented.
+
+So the main issue requirement is already satisfied through filtered CSV export.

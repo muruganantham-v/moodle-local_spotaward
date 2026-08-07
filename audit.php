@@ -106,18 +106,12 @@ $columns = [
 
 $rows = [];
 foreach ($records as $record) {
-    $actorname = trim(fullname((object)[
-        'firstname' => $record->actorfirstname ?? '',
-        'lastname' => $record->actorlastname ?? '',
-    ]));
+    $actorname = trim(local_spotaward_fullname($record->actorfirstname ?? '', $record->actorlastname ?? ''));
     if ($actorname === '') {
         $actorname = '-';
     }
 
-    $studentname = trim(fullname((object)[
-        'firstname' => $record->studentfirstname ?? '',
-        'lastname' => $record->studentlastname ?? '',
-    ]));
+    $studentname = trim(local_spotaward_fullname($record->studentfirstname ?? '', $record->studentlastname ?? ''));
     if ($studentname === '') {
         $studentname = '-';
     }

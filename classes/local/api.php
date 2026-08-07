@@ -444,7 +444,12 @@ final class api {
             return [];
         }
 
-        $suggestions = self::build_nomination_suggestion_map($courseid, $students);
+        $allowedcategories = [];
+        foreach (constants::award_categories_for_course((string)$course->shortname, (string)$course->fullname) as $category) {
+            $allowedcategories[constants::base_award_category((string)$category)] = true;
+        }
+
+        $suggestions = self::build_nomination_suggestion_map($courseid, $students, $allowedcategories);
         $result = [];
         foreach (constants::award_categories_for_course((string)$course->shortname, (string)$course->fullname) as $category) {
             $basecategory = constants::base_award_category((string)$category);
@@ -504,13 +509,16 @@ final class api {
                    AND u.suspended = 0
                    AND u.email <> ''
                    AND ra.roleid = :roleid
-                   AND ctx.contextlevel = :courselevel
-                   AND ctx.instanceid = :courseid
+                   AND (
+                       (ctx.contextlevel = :courselevel AND ctx.instanceid = :courseid)
+                       OR ctx.contextlevel = :systemlevel
+                   )
               ORDER BY u.firstname ASC, u.lastname ASC";
 
         return array_values($DB->get_records_sql($sql, [
             'roleid' => $roleid,
             'courselevel' => CONTEXT_COURSE,
+            'systemlevel' => CONTEXT_SYSTEM,
             'courseid' => $courseid,
         ]));
     }
@@ -522,7 +530,7 @@ final class api {
      * @param array $students
      * @return array
      */
-    private static function build_nomination_suggestion_map(int $courseid, array $students): array {
+    private static function build_nomination_suggestion_map(int $courseid, array $students, array $allowedcategories): array {
         $course = get_course($courseid);
         $activities = self::get_course_report_activities($course);
         if (empty($activities)) {
@@ -537,6 +545,7 @@ final class api {
         $attendancebyuser = [];
         $moduletestbyuser = [];
         $quizbyuser = [];
+        $programmingtestbyuser = [];
         $assignmentactivities = [];
         $projectactivities = [];
 
@@ -554,6 +563,8 @@ final class api {
                     $moduletestbyuser[$studentid][] = $scorepercent;
                 } else if ($scorepercent !== null && self::gradebook_category_matches($basecategory, ['quiz'])) {
                     $quizbyuser[$studentid][] = $scorepercent;
+                } else if ($scorepercent !== null && self::gradebook_category_matches($basecategory, ['programming test'])) {
+                    $programmingtestbyuser[$studentid][] = $scorepercent;
                 }
             }
 
@@ -568,32 +579,58 @@ final class api {
 
         $suggestions = [];
 
-        $perfectattendance = [];
-        $regularattendance = [];
-        foreach ($attendancebyuser as $studentid => $scores) {
-            if (empty($scores)) {
-                continue;
-            }
+        if (isset($allowedcategories['Perfect Attendance']) || isset($allowedcategories['Most Regular Student'])) {
+            $perfectattendance = [];
+            $regularattendance = [];
+            foreach ($attendancebyuser as $studentid => $scores) {
+                if (empty($scores)) {
+                    continue;
+                }
 
-            $average = array_sum($scores) / count($scores);
-            if ($average >= 100.0) {
-                $perfectattendance[] = $studentid;
-            } else if ($average >= 95.0 && $average < 100.0) {
-                $regularattendance[] = $studentid;
+                $average = array_sum($scores) / count($scores);
+                if ($average >= 100.0) {
+                    $perfectattendance[] = $studentid;
+                } else if ($average >= 95.0 && $average < 100.0) {
+                    $regularattendance[] = $studentid;
+                }
+            }
+            if (isset($allowedcategories['Perfect Attendance'])) {
+                $suggestions['Perfect Attendance'] = $perfectattendance;
+            }
+            if (isset($allowedcategories['Most Regular Student'])) {
+                $suggestions['Most Regular Student'] = $regularattendance;
             }
         }
-        $suggestions['Perfect Attendance'] = $perfectattendance;
-        $suggestions['Most Regular Student'] = $regularattendance;
 
-        $suggestions['Top Performer - Module Test'] = self::pick_top_students_by_average($moduletestbyuser, 3);
-        $suggestions['Quiz Champion'] = self::pick_highest_scoring_students($quizbyuser);
+        if (isset($allowedcategories['Top Performer - Module Test'])) {
+            $suggestions['Top Performer - Module Test'] = self::pick_top_students_by_average($moduletestbyuser, 3);
+        }
+        
+        if (isset($allowedcategories['Best Problem Solver'])) {
+            $programmingtestaverages = [];
+            foreach ($programmingtestbyuser as $studentid => $scores) {
+                if (empty($scores)) {
+                    continue;
+                }
+                $average = array_sum($scores) / count($scores);
+                if ($average > 80.0) {
+                    $programmingtestaverages[$studentid] = $average;
+                }
+            }
+            arsort($programmingtestaverages, SORT_NUMERIC);
+            $suggestions['Best Problem Solver'] = array_slice(array_keys($programmingtestaverages), 0, 2);
+        }
+        
+        if (isset($allowedcategories['Quiz Champion'])) {
+            $suggestions['Quiz Champion'] = self::pick_highest_scoring_students($quizbyuser);
+        }
 
-        if (count($assignmentactivities) >= 3) {
+        if (isset($allowedcategories['Enthusiastic Learner']) && count($assignmentactivities) >= 3) {
             $assignmentranking = self::get_submission_rankings($assignmentactivities, $studentids);
             $suggestions['Enthusiastic Learner'] = self::pick_lowest_rank_students($assignmentranking, count($assignmentactivities), 3);
         }
 
-        if (count($projectactivities) > 1) {
+        if (isset($allowedcategories['Project Enthusiast']) && count($projectactivities) > 1) {
             $projectranking = self::get_submission_rankings($projectactivities, $studentids);
             $suggestions['Project Enthusiast'] = self::pick_lowest_rank_students($projectranking, count($projectactivities), 3);
         }
@@ -1022,9 +1059,11 @@ final class api {
     public static function replace_draft_entries(stdClass $data, int $userid): void {
         global $SESSION;
 
-        if (empty($data->courseid) ||
-                empty($data->professional) || empty($data->programmanagerid) || empty($data->maacexecutiveid)) {
+        if (empty($data->courseid) || empty($data->professional) || empty($data->programmanagerid)) {
             throw new moodle_exception('draftvalidationerror', 'local_spotaward');
+        }
+        if (empty($data->maacexecutiveid)) {
+            throw new moodle_exception('missingmaacexecutive', 'local_spotaward');
         }
 
         $courseid = (int)$data->courseid;
@@ -1190,11 +1229,16 @@ final class api {
 
         $firstEntry = reset($entries);
         $parentcategories = [];
+        $descriptions = [];
+        $studentCount = 0;
+
         foreach ($entries as $entry) {
             $category = trim((string)($entry['awardcategory'] ?? ''));
             if ($category !== '') {
                 $parentcategories[$category] = $category;
             }
+            $descriptions[] = $entry['awardcategory'] . ': ' . $entry['awarddescription'];
+            $studentCount += count($entry['studentids'] ?? []);
         }
 
         $nomination = (object)[
@@ -1205,22 +1249,16 @@ final class api {
             'modulename' => $firstEntry['modulename'],
             'awardcategory' => implode(', ', array_values($parentcategories)),
             'professional' => $firstEntry['professional'] ?? '',
-            'awarddescription' => $firstEntry['awarddescription'],
-            'studentcount' => 0,
+            'awarddescription' => implode("\n\n", $descriptions),
+            'studentcount' => $studentCount,
             'status' => 'pending',
             'timecreated' => $now,
             'timemodified' => $now,
         ];
         $nominationid = $DB->insert_record('spotaward_nominations', $nomination);
 
-        $descriptions = [];
-        $studentCount = 0;
-
         foreach ($entries as $entry) {
-            $descriptions[] = $entry['awardcategory'] . ': ' . $entry['awarddescription'];
             foreach ($entry['studentids'] as $studentid) {
-                $studentCount++;
-
                 $itemid = $DB->insert_record('spotaward_nomination_items', (object)[
                     'nominationid' => $nominationid,
                     'studentid' => (int)$studentid,
@@ -1244,9 +1282,6 @@ final class api {
                 ]);
             }
         }
-
-        $DB->set_field('spotaward_nominations', 'awarddescription', implode("\n\n", $descriptions), ['id' => $nominationid]);
-        $DB->set_field('spotaward_nominations', 'studentcount', $studentCount, ['id' => $nominationid]);
 
         $transaction->allow_commit();
 
@@ -1911,11 +1946,16 @@ final class api {
 
         $cliqsubjecttemplate = (string)get_config('local_spotaward', 'cliq_' . $subjectkey);
         $cliqbodytemplate = (string)get_config('local_spotaward', 'cliq_' . $bodykey);
+        $stringman = get_string_manager();
         if ($cliqsubjecttemplate === '') {
-            $cliqsubjecttemplate = get_string('cliq_' . $defaultsubjectkey, 'local_spotaward');
+            $cliqsubjecttemplate = $stringman->string_exists('cliq_' . $defaultsubjectkey, 'local_spotaward')
+                ? get_string('cliq_' . $defaultsubjectkey, 'local_spotaward')
+                : get_string($defaultsubjectkey, 'local_spotaward');
         }
         if ($cliqbodytemplate === '') {
-            $cliqbodytemplate = get_string('cliq_' . $defaultbodykey, 'local_spotaward');
+            $cliqbodytemplate = $stringman->string_exists('cliq_' . $defaultbodykey, 'local_spotaward')
+                ? get_string('cliq_' . $defaultbodykey, 'local_spotaward')
+                : get_string($defaultbodykey, 'local_spotaward');
         }
         $cliqbodytemplate = self::ensure_cliq_record_link_present($cliqbodytemplate);
 
@@ -2577,8 +2617,13 @@ final class api {
      * @param array $recordids
      * @return int
      */
-    public static function delete_audit_log_records(array $recordids): int {
-        global $DB;
+    public static function delete_audit_log_records(array $recordids, int $actorid = 0): int {
+        global $DB, $USER;
+        
+        $actorid = $actorid ?: $USER->id;
+        if (!is_siteadmin($actorid)) {
+            throw new moodle_exception('notauthorised', 'local_spotaward');
+        }
 
         $recordids = array_values(array_unique(array_filter(array_map('intval', $recordids))));
         if (empty($recordids)) {
@@ -2762,7 +2807,7 @@ final class api {
         // Match {#s}...{/s} or {#S}...{/S} patterns
         // The key is captured: {#S}CERTTITLE{/S} -> key = "CERTTITLE"
         $html = preg_replace_callback(
-            '/\{#[sS]([a-zA-Z0-9_\-]+)\{\/[sS]\}/u',
+            '/\{#[sS]\}([a-zA-Z0-9_\-]+)\{\/[sS]\}/u',
             function($matches) {
                 $key = strtolower(trim($matches[1]));
                 
@@ -3287,8 +3332,8 @@ final class api {
                         return time();
                     }
                     
-                    // Default: return current date in standard format
-                    return userdate(time(), '%d-%m-%Y');
+                    // Default: return original string to preserve unreplaced tokens
+                    return $matches[0];
                 } catch (\Exception $e) {
                     // On error, return original (will appear as {{...}})
                     return $matches[0];
@@ -3902,86 +3947,7 @@ final class api {
         }
     }
 
-    /**
-     * Optimize a merged PDF with Ghostscript when available.
-     *
-     * This keeps the existing merge path intact and only applies a second
-     * optimization pass when a supported Ghostscript binary is present.
-     *
-     * @param string $pdfcontent
-     * @param string $outputfilename
-     * @return string
-     */
-    private static function optimize_pdf_with_ghostscript(string $pdfcontent, string $outputfilename): string {
-        global $CFG;
 
-        $binary = self::find_ghostscript_binary();
-        if ($binary === '') {
-            return '';
-        }
-
-        check_dir_exists($CFG->tempdir . '/spotaward_gs_optimize');
-        $tempdir = make_temp_directory('spotaward_gs_optimize');
-        $inputpath = tempnam($tempdir, 'spotawardin');
-        $outputpath = tempnam($tempdir, 'spotawardout');
-        if ($inputpath === false || $outputpath === false) {
-            if ($inputpath && is_file($inputpath)) {
-                @unlink($inputpath);
-            }
-            if ($outputpath && is_file($outputpath)) {
-                @unlink($outputpath);
-            }
-            return '';
-        }
-
-        $pdfinput = $inputpath . '.pdf';
-        $pdfoutput = $outputpath . '.pdf';
-        @rename($inputpath, $pdfinput);
-        @rename($outputpath, $pdfoutput);
-
-        try {
-            if (file_put_contents($pdfinput, $pdfcontent) === false) {
-                return '';
-            }
-
-            $cmd = escapeshellarg($binary) .
-                ' -sDEVICE=pdfwrite' .
-                ' -dCompatibilityLevel=1.4' .
-                ' -dNOPAUSE -dBATCH -dSAFER -dQUIET' .
-                ' -dDetectDuplicateImages=true' .
-                ' -dCompressFonts=true' .
-                ' -dSubsetFonts=true' .
-                ' -dAutoFilterColorImages=false' .
-                ' -dAutoFilterGrayImages=false' .
-                ' -dColorImageFilter=/DCTEncode' .
-                ' -dGrayImageFilter=/DCTEncode' .
-                ' -dJPEGQ=85' .
-                ' -dDownsampleColorImages=false' .
-                ' -dDownsampleGrayImages=false' .
-                ' -dDownsampleMonoImages=false' .
-                ' -sOutputFile=' . escapeshellarg($pdfoutput) . ' ' .
-                escapeshellarg($pdfinput);
-
-            $exitcode = self::run_pdf_optimization_command($cmd);
-            if ($exitcode !== 0 || !is_file($pdfoutput)) {
-                return '';
-            }
-
-            $optimized = file_get_contents($pdfoutput);
-            if ($optimized === false || $optimized === '') {
-                return '';
-            }
-
-            return strlen($optimized) <= strlen($pdfcontent) ? $optimized : $pdfcontent;
-        } finally {
-            if (is_file($pdfinput)) {
-                @unlink($pdfinput);
-            }
-            if (is_file($pdfoutput)) {
-                @unlink($pdfoutput);
-            }
-        }
-    }
 
     /**
      * Locate a Ghostscript binary if available on the host.
@@ -4444,6 +4410,14 @@ final class api {
             }
         }
 
+        // Add local spotaward fonts directory and register signature fonts.
+        $fontdirs[] = __DIR__ . '/../../fonts';
+        foreach (\local_spotaward\local\constants::signature_fonts_mapping() as $fontkey => $filename) {
+            $fontdata[$fontkey] = [
+                'R' => $filename,
+            ];
+        }
+
         $windowsfontdir = getenv('WINDIR') ? getenv('WINDIR') . DIRECTORY_SEPARATOR . 'Fonts' : 'C:\\Windows\\Fonts';
         $arialregular = $windowsfontdir . DIRECTORY_SEPARATOR . 'arial.ttf';
         $arialbold = $windowsfontdir . DIRECTORY_SEPARATOR . 'arialbd.ttf';
@@ -4509,6 +4483,12 @@ final class api {
         $value = str_replace('</u>', '___U_CLOSE___', $value);
         $value = str_replace('<br>', '___BR_TAG___', $value);
         
+        // Protect span tags with style attributes
+        $value = preg_replace_callback('/<span\s+style="([^"]*)"\s*>/i', function($matches) {
+            return '___SPAN_STYLE_START___' . base64_encode($matches[1]) . '___SPAN_STYLE_END___';
+        }, $value);
+        $value = str_replace('</span>', '___SPAN_CLOSE___', $value);
+        
         // Now escape everything
         $value = htmlspecialchars($value, ENT_QUOTES | ENT_HTML5, 'UTF-8');
         
@@ -4524,6 +4504,12 @@ final class api {
         $value = str_replace('___U_TAG___', '<u>', $value);
         $value = str_replace('___U_CLOSE___', '</u>', $value);
         $value = str_replace('___BR_TAG___', '<br>', $value);
+        
+        // Restore span tags
+        $value = preg_replace_callback('#___SPAN_STYLE_START___([A-Za-z0-9+/=]+)___SPAN_STYLE_END___#', function($matches) {
+            return '<span style="' . base64_decode($matches[1]) . '">';
+        }, $value);
+        $value = str_replace('___SPAN_CLOSE___', '</span>', $value);
         
         return $value;
     }
@@ -4755,6 +4741,9 @@ final class api {
             throw new moodle_exception('certificatenotfound', 'local_spotaward');
         }
 
+        while (ob_get_level()) {
+            ob_end_clean();
+        }
         send_stored_file($file, 0, 0, true, [
             'filename' => $nominationitemid > 0
                 ? self::get_certificate_filename($nominationitemid, $userid)
@@ -5262,7 +5251,8 @@ final class api {
                   JOIN {spotaward_nominations} n ON n.maacexecutiveid = u.id
               ORDER BY firstname ASC, lastname ASC";
 
-        foreach ($DB->get_records_sql($sql) as $row) {
+        $recordset = $DB->get_recordset_sql($sql);
+        foreach ($recordset as $row) {
             $name = fullname($row);
             if ($row->roletype === 'mentor') {
                 $mentoroptions[$row->id] = $name;
@@ -5272,6 +5262,7 @@ final class api {
                 $maacoptions[$row->id] = $name;
             }
         }
+        $recordset->close();
 
         return [$mentoroptions, $pmoptions, $maacoptions];
     }
@@ -6131,13 +6122,16 @@ final class api {
      * @return bool
      */
     private static function table_has_field(string $tablename, string $fieldname): bool {
-        global $DB;
-
-        $dbman = $DB->get_manager();
-        $table = new \xmldb_table($tablename);
-        $field = new \xmldb_field($fieldname);
-
-        return $dbman->table_exists($table) && $dbman->field_exists($table, $field);
+        static $cache = [];
+        $key = $tablename . '.' . $fieldname;
+        if (!isset($cache[$key])) {
+            global $DB;
+            $dbman = $DB->get_manager();
+            $table = new \xmldb_table($tablename);
+            $field = new \xmldb_field($fieldname);
+            $cache[$key] = $dbman->table_exists($table) && $dbman->field_exists($table, $field);
+        }
+        return $cache[$key];
     }
 
     /**
@@ -6686,10 +6680,10 @@ final class api {
             $newstatus = 'pending';
         } else if ($hasssteamprogress) {
             $newstatus = 'ssteamprogress';
-        } else if ($hasclosed) {
-            $newstatus = 'closed';
         } else if ($hasrejected) {
             $newstatus = 'rejected';
+        } else if ($hasclosed) {
+            $newstatus = 'closed';
         } else {
             $newstatus = 'pending';
         }
@@ -6901,6 +6895,10 @@ final class api {
             return true;
         }
 
+        if ($nomination->nominatorid == $userid) {
+            return true;
+        }
+
         if ($nomination->programmanagerid == $userid) {
             return true;
         }
@@ -6936,21 +6934,11 @@ final class api {
             return false;
         }
 
-        if (is_siteadmin($userid)) {
+        if (is_siteadmin($userid) || self::is_manager($userid)) {
             return true;
         }
 
-        $isassignedpm = (int)$nomination->programmanagerid === $userid;
-        $isassignedmaac = self::is_assigned_maac_executive($nomination, $userid);
-        if (!$isassignedpm && !$isassignedmaac) {
-            return false;
-        }
-
-        if ($isassignedpm && self::nomination_has_reviewed_items((int)$nomination->id)) {
-            return false;
-        }
-
-        return true;
+        return false;
     }
 
     /**
@@ -7201,6 +7189,8 @@ final class api {
         ]);
 
         $transaction->allow_commit();
+        unset(self::$nominationitemscache[$nominationid]);
+        unset(self::$nominationcache[$nominationid]);
 
         self::send_record_closed_notification($nominationid, $actorid, $closuredate);
     }
@@ -7228,5 +7218,7 @@ final class api {
         $DB->delete_records('spotaward_nomination_items', ['nominationid' => $nominationid]);
         $DB->delete_records('spotaward_nominations', ['id' => $nominationid]);
         $transaction->allow_commit();
+        unset(self::$nominationcache[$nominationid]);
+        unset(self::$nominationitemscache[$nominationid]);
     }
 }

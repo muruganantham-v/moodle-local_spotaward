@@ -177,6 +177,15 @@ $settings->add(new admin_setting_configselect(
         $options
     ));
 
+    $fontoptions = \local_spotaward\local\constants::signature_fonts_list();
+    $settings->add(new admin_setting_configselect(
+        'local_spotaward/signature_font',
+        get_string('signature_font_setting', 'local_spotaward'),
+        get_string('signature_font_setting_desc', 'local_spotaward'),
+        'autography',
+        $fontoptions
+    ));
+
     $settings->add(new admin_setting_configselect(
         'local_spotaward/pr_templateid',
         get_string('pr_template', 'local_spotaward'),

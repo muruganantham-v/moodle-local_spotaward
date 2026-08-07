@@ -1,0 +1,16 @@
+Improved the nominator History tab to use the existing table tools more effectively.
+
+What changed:
+- Enabled the shared table search/filter toolbar for nomination history.
+- Added a history-specific search placeholder.
+- Kept the date column as a date-filterable field.
+- Kept course, module, and status as selectable filter columns.
+- Removed the extra Submission ID column so the table matches the intended history view more closely.
+
+Result:
+- nominators can now search and filter their submission history directly in the table
+- default ordering remains newest first because the source rows are still provided in descending submission order
+
+Verification:
+- php -l classes/output/renderer.php
+- php -l lang/en/local_spotaward.php

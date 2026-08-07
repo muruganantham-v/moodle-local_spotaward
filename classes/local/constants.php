@@ -44,8 +44,14 @@ final class constants {
      */
     private static function get_role_id(string $shortname): int {
         global $DB;
-        $role = $DB->get_record('role', ['shortname' => $shortname]);
-        return $role ? (int)$role->id : 0;
+        static $rolecache = [];
+        
+        if (!isset($rolecache[$shortname])) {
+            $role = $DB->get_record('role', ['shortname' => $shortname]);
+            $rolecache[$shortname] = $role ? (int)$role->id : 0;
+        }
+        
+        return $rolecache[$shortname];
     }
 
     /**
@@ -222,6 +228,7 @@ final class constants {
             'Best Problem Solver - Mid C' => 'Best Problem Solver - Mid C',
             'Project Enthusiast' => 'Project Enthusiast',
             'The \'10\'-er' => 'The \'10\'-er',
+            'The \'15\'-er' => 'The \'15\'-er',
             'Fast Coder - Mid C' => 'Fast Coder - Mid C',
             'Logical Thinker - Mid C' => 'Logical Thinker - Mid C',
             'Perfect coder - Mid C' => 'Perfect coder - Mid C',
@@ -239,7 +246,9 @@ final class constants {
      * @return array
      */
     public static function advanced_c_award_categories(): array {
-        return self::award_categories();
+        $categories = self::award_categories();
+        unset($categories['The \'15\'-er']);
+        return $categories;
     }
 
     /**
@@ -288,11 +297,23 @@ final class constants {
      */
     public static function award_categories_for_course(string $shortname, string $fullname): array {
         $shortname = \core_text::strtoupper(trim($shortname));
-        if ($shortname !== '' && \core_text::strpos($shortname, 'ADVC102') === 0) {
-            return self::advanced_c_award_categories();
+        $isadvancedc = ($shortname !== '' && \core_text::strpos($shortname, 'ADVC102') === 0) || 
+                       \core_text::strpos(\core_text::strtoupper(trim($fullname)), 'ADVANCED C') !== false;
+
+        if ($isadvancedc) {
+            $categories = self::advanced_c_award_categories();
+        } else {
+            $categories = self::award_categories_for_course_name($fullname);
         }
 
-        return self::award_categories_for_course_name($fullname);
+        if (!$isadvancedc) {
+            $module = self::module_for_course($shortname, $fullname);
+            if ($module === 'Microcontrollers' || $module === 'Linux Internals and TCP/IP Networking') {
+                $categories['The \'15\'-er'] = 'The \'15\'-er';
+            }
+        }
+
+        return $categories;
     }
 
     /**
@@ -309,6 +330,7 @@ final class constants {
             'Best Problem Solver' => 'Demonstrating problem solving capabilities in <Module-Name>. This goes a long way in building a solid career in core industry.',
             'Project Enthusiast' => 'Going extra mile by completing more projects in <Module-Name>. Projects are demonstration of your capability. This will speak in your placements.',
             'The \'10\'-er' => 'Your dedication and hardwork in completing 10 projects as a part of PowerTrack. Projects are foundations, will definitely have a positive impact on your placements. Keep it up!',
+            'The \'15\'-er' => 'Your dedication and hardwork in completing 15 projects as a part of PowerTrack. Projects are foundations, will definitely have a positive impact on your placements. Keep it up!',
             'Fast Coder' => 'Completing a coding exercise or challenge the quickest.',
             'Logical Thinker' => 'Providing a particularly clever or efficient solution to a problem discussed in class.',
             'Perfect coder' => 'Writing code that follows all guidelines, including proper naming conventions, documentation, and overall neatness.',
@@ -369,6 +391,79 @@ final class constants {
         return [
             'Embedded Professional' => 'Embedded Professional',
             'IoT Professional' => 'IoT Professional',
+        ];
+    }
+
+    /**
+     * Get the configured signature font family.
+     *
+     * @return string
+     */
+    public static function signature_font(): string {
+        return get_config('local_spotaward', 'signature_font') ?: 'autography';
+    }
+
+    /**
+     * Get all signature font options for select configuration.
+     *
+     * @return array
+     */
+    public static function signature_fonts_list(): array {
+        return [
+            'autography' => 'Autography',
+            'rockybilly' => 'Rockybilly',
+            'moralana' => 'Moralana',
+            'bastligaone' => 'Bastliga One',
+            'signatie' => 'Signatie',
+            'ronthelbrush' => 'Ronthel Brush',
+            'californiansignature' => 'Californian Signature',
+            'gatewaysignature' => 'Gateway Signature',
+            'jalliya' => 'Jalliya',
+            'thesignature' => 'Thesignature',
+            'storyoflove' => 'Story Of Love',
+            'havana' => 'Havana Personal Use Only',
+            'modernsignature' => 'Modern Signature',
+            'aerotis' => 'Aerotis',
+            'allison' => 'Allison',
+            'creata' => 'Creata',
+            'tomatoes' => 'Tomatoes',
+            'wishloved' => 'Wishloved',
+            'alexbrush' => 'Alex Brush',
+            'caveat' => 'Caveat',
+            'parisienne' => 'Parisienne',
+            'vibur' => 'Vibur',
+        ];
+    }
+
+    /**
+     * Get signature font families mapping to their TTF filenames in fonts directory.
+     *
+     * @return array
+     */
+    public static function signature_fonts_mapping(): array {
+        return [
+            'autography' => 'Autography.ttf',
+            'rockybilly' => 'Rockybilly.ttf',
+            'moralana' => 'Moralana DEMO.otf',
+            'bastligaone' => 'Bastliga One.ttf',
+            'signatie' => 'Signatie.ttf',
+            'ronthelbrush' => 'Ronthel Brush DEMO.otf',
+            'californiansignature' => 'Californian Signature.otf',
+            'gatewaysignature' => 'gateway.ttf',
+            'jalliya' => 'Jalliya.ttf',
+            'thesignature' => 'Thesignature.ttf',
+            'storyoflove' => 'Story.ttf',
+            'havana' => 'Havana.ttf',
+            'modernsignature' => 'modern-font.ttf',
+            'aerotis' => 'Aerotis.ttf',
+            'allison' => 'Allison.ttf',
+            'creata' => 'Creata.ttf',
+            'tomatoes' => 'Tomatoes.ttf',
+            'wishloved' => 'Wishloved.ttf',
+            'alexbrush' => 'AlexBrush-Regular.ttf',
+            'caveat' => 'caveat-regular.ttf',
+            'parisienne' => 'Parisienne-Regular.ttf',
+            'vibur' => 'Vibur-Regular.ttf',
         ];
     }
 }
