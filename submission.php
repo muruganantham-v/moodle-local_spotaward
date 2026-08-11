@@ -40,7 +40,7 @@ $cancontinuereview = $canreview && in_array($nomination->status, ['pending', 'un
 $canmanagerapprove = is_siteadmin() || api::is_manager($USER->id);
 $isssteam = is_siteadmin() || api::is_assigned_maac_executive($nomination, (int)$USER->id);
 $ispm = (int)$nomination->programmanagerid === (int)$USER->id;
-$cansharetoadmin = is_siteadmin() || api::is_ss_team((int)$USER->id);
+$cansharetoadmin = is_siteadmin() || api::is_ss_team((int)$USER->id) || api::is_assigned_maac_executive($nomination, (int)$USER->id);
 $canviewcertificates = ($canmanagerapprove || $isssteam)
     && in_array($nomination->status, ['ssteamprogress', 'closed'], true);
 

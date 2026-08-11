@@ -1536,7 +1536,7 @@ final class api {
         $nomination = self::get_nomination($nominationid);
         self::require_nomination_access($nomination, $actorid);
 
-        if (!self::is_ss_team($actorid) && !is_siteadmin($actorid)) {
+        if (!self::is_ss_team($actorid) && !is_siteadmin($actorid) && !self::is_assigned_maac_executive($nomination, $actorid)) {
             throw new moodle_exception('notauthorised', 'local_spotaward');
         }
 
