@@ -2293,9 +2293,7 @@ final class api {
             }
 
             try {
-                if (file_put_contents($temppath, $certificatefile->get_content()) === false) {
-                    continue;
-                }
+                $certificatefile->copy_content_to($temppath);
                 self::send_configured_notification(
                     [$student],
                     'student_certificate_subject',
@@ -2378,9 +2376,7 @@ final class api {
             }
 
             try {
-                if (file_put_contents($temppath, $certificatefile->get_content()) === false) {
-                    continue;
-                }
+                $certificatefile->copy_content_to($temppath);
                 self::send_configured_notification(
                     [$student],
                     'student_certificate_subject',
@@ -3148,7 +3144,7 @@ final class api {
 
                     $temppath = $tempdir . '/pluginfile_' . $storedfile->get_contenthash() . $ext;
                     if (!is_file($temppath)) {
-                        file_put_contents($temppath, $storedfile->get_content());
+                        $storedfile->copy_content_to($temppath);
                         @chmod($temppath, 0644);
                     }
 
@@ -3889,18 +3885,27 @@ final class api {
         $tempdir = make_temp_directory($tempdirectory);
         $tempfiles = [];
         foreach ($files as $index => $file) {
-            if (!is_object($file) || !method_exists($file, 'get_content')) {
+            if (!is_object($file) || !method_exists($file, 'copy_content_to')) {
                 continue;
             }
 
-            $content = $file->get_content();
-            if (!is_string($content) || $content === '') {
+            $temppath = tempnam($tempdir, 'spotawardstored' . $index);
+            if ($temppath === false) {
                 continue;
             }
 
-            $temppath = self::write_pdf_temp_file($content, $tempdir, 'spotawardstored' . $index);
-            if ($temppath !== '') {
-                $tempfiles[] = $temppath;
+            $pdfpath = $temppath . '.pdf';
+            @rename($temppath, $pdfpath);
+
+            try {
+                $file->copy_content_to($pdfpath);
+                if (is_file($pdfpath) && filesize($pdfpath) > 0) {
+                    $tempfiles[] = $pdfpath;
+                } else {
+                    @unlink($pdfpath);
+                }
+            } catch (\Exception $e) {
+                @unlink($pdfpath);
             }
         }
 
@@ -4925,14 +4930,27 @@ final class api {
         $tempdir = make_temp_directory('spotaward_zip_sources');
         $zipfiles = [];
         foreach ($files as $index => $file) {
-            $content = $file->get_content();
-            if (!is_string($content) || $content === '') {
+            if (!is_object($file) || !method_exists($file, 'copy_content_to')) {
                 continue;
             }
 
-            $temppath = self::write_pdf_temp_file($content, $tempdir, 'spotawardzip' . $index);
-            if ($temppath !== '') {
-                $zipfiles[$file->get_filename()] = $temppath;
+            $temppath = tempnam($tempdir, 'spotawardzip' . $index);
+            if ($temppath === false) {
+                continue;
+            }
+
+            $pdfpath = $temppath . '.pdf';
+            @rename($temppath, $pdfpath);
+
+            try {
+                $file->copy_content_to($pdfpath);
+                if (is_file($pdfpath) && filesize($pdfpath) > 0) {
+                    $zipfiles[$file->get_filename()] = $pdfpath;
+                } else {
+                    @unlink($pdfpath);
+                }
+            } catch (\Exception $e) {
+                @unlink($pdfpath);
             }
         }
 
