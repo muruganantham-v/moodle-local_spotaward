@@ -32,7 +32,6 @@ $itemid = optional_param('itemid', 0, PARAM_INT);
 $action = optional_param('action', 'view', PARAM_TEXT);
 
 require_login();
-require_sesskey();
 
 $nomination = $DB->get_record('spotaward_nominations', ['id' => $nominationid], '*', MUST_EXIST);
 if (!in_array($nomination->status, ['ssteamprogress', 'closed'], true)) {

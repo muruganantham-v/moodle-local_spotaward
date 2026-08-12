@@ -1,9 +1,9 @@
 <?php
 // This file is part of Moodle - http://moodle.org/
 
-use local_spotaward\local\api;
-
 defined('MOODLE_INTERNAL') || die();
+
+use local_spotaward\local\api;
 
 /**
  * Require the plugin stylesheet with a cache-busting version.

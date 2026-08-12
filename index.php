@@ -823,7 +823,7 @@ if ($view === 'manager' && $ismanager) {
                 new moodle_url('/local/spotaward/index.php', ['view' => 'manager', 'delete' => $record->id, 'sesskey' => sesskey()]),
                 get_string('delete', 'local_spotaward'),
                 [
-                    'onclick' => 'return confirm("' . get_string('confirmdelete', 'local_spotaward') . '");',
+                    'onclick' => 'return confirm("' . addslashes_js(get_string('confirmdelete', 'local_spotaward')) . '");',
                     'data-spotaward-success' => '1',
                 ]
             );

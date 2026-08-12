@@ -510,8 +510,16 @@ final class api {
                    AND u.email <> ''
                    AND ra.roleid = :roleid
                    AND (
-                       (ctx.contextlevel = :courselevel AND ctx.instanceid = :courseid)
-                       OR ctx.contextlevel = :systemlevel
+                       (ctx.contextlevel = :systemlevel)
+                       OR 
+                       (ctx.contextlevel = :courselevel AND ctx.instanceid = :courseid
+                        AND EXISTS (
+                            SELECT 1 FROM {user_enrolments} ue
+                            JOIN {enrol} e ON e.id = ue.enrolid
+                            WHERE ue.userid = u.id AND e.courseid = :courseidenrol
+                              AND ue.status = 0 AND e.status = 0
+                        )
+                       )
                    )
               ORDER BY u.firstname ASC, u.lastname ASC";
 
@@ -520,6 +528,7 @@ final class api {
             'courselevel' => CONTEXT_COURSE,
             'systemlevel' => CONTEXT_SYSTEM,
             'courseid' => $courseid,
+            'courseidenrol' => $courseid,
         ]));
     }
 

@@ -337,15 +337,7 @@ $default_template = '<!-- HEADER -->
 <div style="border:1px solid #e3e3e3;border-radius:4px;background:#f4f3f3;margin-bottom:24px;padding:16px;">
   <div style="font-family:poppins,sans-serif;font-size:14px;font-weight:500;color:#4d4d4d;">Award Category Summary :</div>
   <div style="font-family:poppins,sans-serif;margin-top:8px;font-size:13px;color:#1a1a1a;">[[SUMMARY_TEXT]]</div>
-</div>
-
-<!-- FOOTER -->
-<table style="width:100%;border-collapse:collapse;border-top:1px solid #1a1a1a;margin-top:14px;">
-  <tr>
-    <td style="padding:10px 0 0 0;font-family:poppins,sans-serif;font-size:12px;color:#4d4d4d;text-align:left;">Spot Awards - Student Recognition Details</td>
-    <td style="padding:10px 0 0 0;font-family:poppins,sans-serif;font-size:12px;color:#4d4d4d;text-align:right;">Page {PAGENO}</td>
-  </tr>
-</table>';
+</div>';
 
 $template = $default_template;
 
