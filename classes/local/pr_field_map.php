@@ -1,5 +1,26 @@
 <?php
 // This file is part of Moodle - http://moodle.org/
+//
+// Moodle is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Moodle is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
+
+/**
+ * Purchase Request template field map.
+ *
+ * @package   local_spotaward
+ * @copyright 2026
+ * @license   http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
+ */
 
 namespace local_spotaward\local;
 
@@ -84,7 +105,7 @@ final class pr_field_map {
             'course_shortname' => format_string($course->shortname),
             'module_name' => (string)($nomination->modulename ?? ''),
             'professional' => (string)($nomination->professional ?? ''),
-            'status' => get_string($nomination->status, 'local_spotaward'),
+            'status' => constants::status_label($nomination->status ?? ''),
             'student_count' => (string)($nomination->studentcount ?? count($items)),
             'total_students_count' => (string)($nomination->studentcount ?? count($items)),
             'nomination_date' => userdate((int)$nomination->timecreated, '%d-%m-%Y'),

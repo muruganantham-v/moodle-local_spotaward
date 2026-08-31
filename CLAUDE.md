@@ -74,7 +74,6 @@ Four roles drive access control (configured in plugin admin settings, defaulting
 - **`spotaward_nominations`** — one row per nomination batch (nominator, course, PM, MAAC exec, status)
 - **`spotaward_nomination_items`** — one row per student per award category within a nomination
 - **`spotaward_status_track`** — audit trail of every status transition
-- **`spotaward_cert_backgrounds`** — cached background images extracted from Beautiful Certificate templates
 
 ### Frontend
 
@@ -101,7 +100,6 @@ Certificates use the `mod_certificatebeautiful` plugin (must be installed separa
 - Rendering Mustache placeholders (`{{spotaward.student_name}}` etc.) into the template HTML
 - Processing CSS: converts base64 data URIs and pluginfile URLs to temp files for mPDF compatibility, strips woff/woff2 fonts (mPDF supports only TTF/OTF)
 - Generating PDF via mPDF
-- Caching background images in `spotaward_cert_backgrounds`
 
 Certificate field placeholders available in templates: see `classes/local/cert_field_map.php`.
 

@@ -38,7 +38,7 @@ local_spotaward_require_action_success_overlay();
 $canreview = is_siteadmin() || ((int)$nomination->programmanagerid === (int)$USER->id);
 $cancontinuereview = $canreview && in_array($nomination->status, ['pending', 'underreview'], true);
 $canmanagerapprove = is_siteadmin() || api::is_manager($USER->id);
-$isssteam = is_siteadmin() || api::is_assigned_maac_executive($nomination, (int)$USER->id);
+$isssteam = is_siteadmin() || api::is_ss_team((int)$USER->id) || api::is_assigned_maac_executive($nomination, (int)$USER->id);
 $ispm = (int)$nomination->programmanagerid === (int)$USER->id;
 $isnominator = (int)$nomination->nominatorid === (int)$USER->id;
 $cansharetoadmin = is_siteadmin() || api::is_ss_team((int)$USER->id) || api::is_assigned_maac_executive($nomination, (int)$USER->id);
@@ -391,17 +391,29 @@ if ($nomination->status === 'closed') {
     $metaitems[get_string('dateclosed', 'local_spotaward')] = userdate((int)$nomination->timemodified);
 }
 $totalitems    = count($items);
-$revieweditems = count(array_filter($items, function($item) { return $item->status !== 'pending'; }));
+$revieweditems = 0;
+foreach ($items as $item) {
+    if (in_array($item->status, ['ssteamprogress', 'rejected', 'closed'], true)) {
+        $revieweditems++;
+    }
+}
+if ($canviewcertificates && in_array($nomination->status, ['ssteamprogress', 'closed'], true) && !api::certificates_exist($id)) {
+    try {
+        api::ensure_nomination_certificates_generated($id);
+    } catch (\Throwable $e) {
+        debugging('Failed to generate certificates: ' . $e->getMessage(), DEBUG_DEVELOPER);
+    }
+}
 $certificateexist = in_array($nomination->status, ['ssteamprogress', 'closed'], true)
     && api::certificates_exist($id);
 
-if ($nomination->status === 'pending' && $revieweditems > 0 && $totalitems > 0) {
+if (in_array($nomination->status, ['pending', 'underreview'], true) && $revieweditems > 0 && $totalitems > 0) {
     $statuslabel = get_string('partiallyreviewed', 'local_spotaward') .
                    ' (' . $revieweditems . '/' . $totalitems . ')';
 } else if ($nomination->status === 'ssteamprogress' && !$certificateexist) {
     $statuslabel = get_string('approvedawaitingss', 'local_spotaward');
 } else {
-    $statuslabel = get_string($nomination->status, 'local_spotaward');
+    $statuslabel = local_spotaward_get_status_label($nomination->status ?? '');
 }
 $metaitems[get_string('status', 'local_spotaward')] = local_spotaward_render_badge($statuslabel);
 foreach ($metaitems as $label => $value) {
@@ -425,9 +437,9 @@ if (in_array($nomination->status, ['ssteamprogress', 'closed'], true)) {
         );
     }
 
-    if ($isssteam && $certificateexist) {
+    if ($canviewcertificates && $certificateexist) {
         $actionbuttons[] = html_writer::link(
-            new moodle_url('/local/spotaward/view_certificate.php', ['nominationid' => $id, 'userid' => 0]),
+            new moodle_url('/local/spotaward/view_certificate.php', ['nominationid' => $id, 'userid' => 0, 'sesskey' => sesskey()]),
             get_string('viewallcertificates', 'local_spotaward'),
             ['class' => 'btn btn-primary', 'target' => '_blank']
         );
@@ -436,26 +448,17 @@ if (in_array($nomination->status, ['ssteamprogress', 'closed'], true)) {
             get_string('downloadallcertificates', 'local_spotaward'),
             ['class' => 'btn btn-warning']
         );
-        $actionbuttons[] = html_writer::link(
-            new moodle_url('/local/spotaward/index.php', ['sharecertificates' => $id, 'sesskey' => sesskey()]),
-            get_string('sharecertificatestostudents', 'local_spotaward'),
-            [
-                'class' => 'btn btn-success',
-                'onclick' => 'return confirm("' . addslashes_js(get_string('sharecertificatestostudentsconfirm', 'local_spotaward')) . '");',
-                'data-spotaward-success' => '1',
-            ]
-        );
-    } else if (!$isssteam && $canviewcertificates && $certificateexist) {
-        $actionbuttons[] = html_writer::link(
-            new moodle_url('/local/spotaward/view_certificate.php', ['nominationid' => $id, 'userid' => 0]),
-            get_string('viewallcertificates', 'local_spotaward'),
-            ['class' => 'btn btn-primary', 'target' => '_blank']
-        );
-        $actionbuttons[] = html_writer::link(
-            new moodle_url('/local/spotaward/index.php', ['downloadallcert' => $id, 'sesskey' => sesskey()]),
-            get_string('downloadallcertificates', 'local_spotaward'),
-            ['class' => 'btn btn-warning']
-        );
+        if ($isssteam || $ismanager || is_siteadmin() || $isadmin) {
+            $actionbuttons[] = html_writer::link(
+                new moodle_url('/local/spotaward/index.php', ['sharecertificates' => $id, 'sesskey' => sesskey()]),
+                get_string('sharecertificatestostudents', 'local_spotaward'),
+                [
+                    'class' => 'btn btn-success',
+                    'onclick' => 'return confirm("' . addslashes_js(get_string('sharecertificatestostudentsconfirm', 'local_spotaward')) . '");',
+                    'data-spotaward-success' => '1',
+                ]
+            );
+        }
     }
 
     if ($cansharetoadmin && $nomination->status === 'ssteamprogress') {
@@ -643,15 +646,14 @@ foreach ($items as $item) {
     }
 
     if (($isssteam || $canmanagerapprove) &&
-            in_array($item->status, ['ssteamprogress', 'closed'], true) &&
-            api::get_certificate_file($id, $item->studentid, $item->id)) {
+            in_array($item->status, ['ssteamprogress', 'closed'], true)) {
         $actions[] = html_writer::link(
-            new moodle_url('/local/spotaward/view_certificate.php', ['nominationid' => $id, 'userid' => $item->studentid, 'itemid' => $item->id, 'action' => 'view']),
+            new moodle_url('/local/spotaward/view_certificate.php', ['nominationid' => $id, 'userid' => $item->studentid, 'itemid' => $item->id, 'action' => 'view', 'sesskey' => sesskey()]),
             get_string('viewcertificate', 'local_spotaward'),
             ['target' => '_blank']
         );
         $actions[] = html_writer::link(
-            new moodle_url('/local/spotaward/view_certificate.php', ['nominationid' => $id, 'userid' => $item->studentid, 'itemid' => $item->id, 'action' => 'download']),
+            new moodle_url('/local/spotaward/view_certificate.php', ['nominationid' => $id, 'userid' => $item->studentid, 'itemid' => $item->id, 'action' => 'download', 'sesskey' => sesskey()]),
             get_string('downloadcertificate', 'local_spotaward')
         );
     }
@@ -663,7 +665,7 @@ foreach ($items as $item) {
     $studentemail = (string)$item->email;
     $admissionid = (string)$item->username;
     $highlightadmissionid = api::username_needs_admissionid_highlight($admissionid);
-    $statuslabel = get_string($item->status, 'local_spotaward');
+    $statuslabel = local_spotaward_get_status_label($item->status ?? '');
     $rejectionreason = (string)$item->rejectionreason;
 
     $row = [
@@ -766,11 +768,11 @@ $table_args = [
     'label' => get_string('studentstatus', 'local_spotaward'),
     'searchlabel' => 'Search student',
     'searchplaceholder' => 'name, email, admission id',
-    'downloadcsvurl' => (new moodle_url('/local/spotaward/download_csv.php', ['id' => $id]))->out(false),
+    'downloadcsvurl' => (new moodle_url('/local/spotaward/download_csv.php', ['id' => $id, 'sesskey' => sesskey()]))->out(false),
 ];
 
 if (!($ispm && !is_siteadmin()) && !($isnominator && !is_siteadmin())) {
-    $table_args['downloadpdfurl'] = (new moodle_url('/local/spotaward/download_details.php', ['id' => $id]))->out(false);
+    $table_args['downloadpdfurl'] = (new moodle_url('/local/spotaward/download_details.php', ['id' => $id, 'sesskey' => sesskey()]))->out(false);
     $table_args['downloadpdflabel'] = 'Download Student details';
 }
 

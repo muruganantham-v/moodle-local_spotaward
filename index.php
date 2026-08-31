@@ -251,8 +251,21 @@ if ($isnominator) {
         $selectedprogrammanagerid = (int)($draftcontext['programmanagerid'] ?? 0);
         $selectedmaacexecutiveid = (int)($draftcontext['maacexecutiveid'] ?? 0);
 
+        $programmanageroptions = [];
+        $maacexecutiveoptions = [];
+        if (!empty($selectedcourseid)) {
+            foreach (api::get_program_managers_for_course($selectedcourseid) as $pm) {
+                $programmanageroptions[(int)$pm->id] = fullname($pm);
+            }
+            foreach (api::get_maac_executives_for_course($selectedcourseid) as $maac) {
+                $maacexecutiveoptions[(int)$maac->id] = fullname($maac);
+            }
+        }
+
         $mform = new nomination_form(null, [
             'courseoptions' => $allcourseoptions,
+            'programmanageroptions' => $programmanageroptions,
+            'maacexecutiveoptions' => $maacexecutiveoptions,
             'selectedprogrammanagerid' => $selectedprogrammanagerid,
             'selectedmaacexecutiveid' => $selectedmaacexecutiveid,
             'selectedcourseid' => $selectedcourseid,
@@ -314,8 +327,20 @@ if ($isnominator) {
                 $draftcontext = local_spotaward_build_draft_context_from_form_state($draftformstate);
                 $selectedcourseid = (int)($draftcontext['courseid'] ?? $selectedcourseid);
             }
+            $programmanageroptions = [];
+            $maacexecutiveoptions = [];
+            if (!empty($selectedcourseid)) {
+                foreach (api::get_program_managers_for_course($selectedcourseid) as $pm) {
+                    $programmanageroptions[(int)$pm->id] = fullname($pm);
+                }
+                foreach (api::get_maac_executives_for_course($selectedcourseid) as $maac) {
+                    $maacexecutiveoptions[(int)$maac->id] = fullname($maac);
+                }
+            }
             $mform = new nomination_form(null, [
                 'courseoptions' => $allcourseoptions,
+                'programmanageroptions' => $programmanageroptions,
+                'maacexecutiveoptions' => $maacexecutiveoptions,
                 'selectedprogrammanagerid' => $selectedprogrammanagerid,
                 'selectedmaacexecutiveid' => $selectedmaacexecutiveid,
                 'selectedcourseid' => $selectedcourseid,
@@ -417,16 +442,18 @@ if ($view === 'nominator' && $isnominator) {
             echo $output->draft_preview(api::get_draft_preview_rows($USER->id));
         }
     } else {
+        $historydata = api::get_nominator_submissions($USER->id, $page, $dashboardperpage);
+        $submissions = $historydata['records'] ?? [];
         $historyrows = [];
-        foreach (api::get_nominator_submissions($USER->id) as $submission) {
+        foreach ($submissions as $submission) {
             $actions = '';
             $actions .= html_writer::link(
                 new moodle_url('/local/spotaward/submission.php', ['id' => $submission->id]),
-                'View details'
+                get_string('viewdetails', 'local_spotaward')
             );
-            $actions .= html_writer::empty_tag('br');
+            $actions .= ' | ';
             $actions .= html_writer::link(
-                new moodle_url('/local/spotaward/download_csv.php', ['id' => $submission->id]),
+                new moodle_url('/local/spotaward/download_csv.php', ['id' => $submission->id, 'sesskey' => sesskey()]),
                 'Download CSV'
             );
 
@@ -436,11 +463,31 @@ if ($view === 'nominator' && $isnominator) {
                 'submittedtimestamp' => (int)$submission->timecreated,
                 'coursename' => format_string($submission->coursename),
                 'module' => s($submission->modulename),
-                'statuslabel' => local_spotaward_render_badge(get_string($submission->status, 'local_spotaward')),
+                'statuslabel' => (function() use ($submission) {
+                    $reviewed = (int)(($submission->approveditems ?? 0) + ($submission->rejecteditems ?? 0));
+                    $total = (int)($submission->totalitems ?? 0);
+                    $status = (string)($submission->status ?? 'pending');
+                    if (in_array($status, ['pending', 'underreview'], true) && $reviewed > 0 && $total > 0) {
+                        $label = get_string('partiallyreviewed', 'local_spotaward') . ' (' . $reviewed . '/' . $total . ')';
+                    } else {
+                        $label = local_spotaward_get_status_label($status);
+                    }
+                    return local_spotaward_render_badge($label);
+                })(),
                 'actions' => $actions,
+                'detailsurl' => new moodle_url('/local/spotaward/submission.php', ['id' => $submission->id]),
             ];
         }
         echo $output->submission_history($historyrows);
+        echo local_spotaward_render_dashboard_pagination(
+            (int)$historydata['total'],
+            (int)$historydata['page'],
+            (int)$historydata['perpage'],
+            new moodle_url('/local/spotaward/index.php', [
+                'view' => 'nominator',
+                'section' => 'history',
+            ])
+        );
     }
     echo html_writer::end_div();
 }
@@ -506,13 +553,14 @@ if ($view === 'programmanager' && $ispm) {
                 $reviewed = (int)($submission->revieweditems ?? 0);
                 $total    = (int)($submission->totalitems ?? 0);
                 $hascerts = (int)($submission->certificatesexist ?? 0) > 0;
-                if ($submission->status === 'pending' && $reviewed > 0 && $total > 0) {
+                $status   = (string)($submission->status ?? 'pending');
+                if (in_array($status, ['pending', 'underreview'], true) && $reviewed > 0 && $total > 0) {
                     $label = get_string('partiallyreviewed', 'local_spotaward') .
                              ' (' . $reviewed . '/' . $total . ')';
-                } else if ($submission->status === 'ssteamprogress' && !$hascerts) {
+                } else if ($status === 'ssteamprogress' && !$hascerts) {
                     $label = get_string('approvedawaitingss', 'local_spotaward');
                 } else {
-                    $label = get_string($submission->status, 'local_spotaward');
+                    $label = local_spotaward_get_status_label($status);
                 }
                 return local_spotaward_table_cell(
                     local_spotaward_render_badge($label),
@@ -608,12 +656,13 @@ if ($view === 'ssteam' && $isssteam) {
                 $reviewed = (int)($record->revieweditems ?? 0);
                 $total    = (int)($record->totalitems ?? 0);
                 $hascerts = (int)($record->certificatesexist ?? 0) > 0;
-                if ($record->status === 'pending' && $reviewed > 0 && $total > 0) {
+                $status   = (string)($record->status ?? 'pending');
+                if (in_array($status, ['pending', 'underreview'], true) && $reviewed > 0 && $total > 0) {
                     $label = get_string('partiallyreviewed', 'local_spotaward') . ' (' . $reviewed . '/' . $total . ')';
-                } else if ($record->status === 'ssteamprogress' && !$hascerts) {
+                } else if ($status === 'ssteamprogress' && !$hascerts) {
                     $label = get_string('approvedawaitingss', 'local_spotaward');
                 } else {
-                    $label = get_string($record->status, 'local_spotaward');
+                    $label = local_spotaward_get_status_label($status);
                 }
                 return local_spotaward_table_cell(local_spotaward_render_badge($label), ['text' => $label]);
             })(),
@@ -854,12 +903,13 @@ if ($view === 'manager' && $ismanager) {
                 $reviewed = (int)($record->revieweditems ?? 0);
                 $total    = (int)($record->totalitems ?? 0);
                 $hascerts = (int)($record->certificatesexist ?? 0) > 0;
-                if ($record->status === 'pending' && $reviewed > 0 && $total > 0) {
+                $status   = (string)($record->status ?? 'pending');
+                if (in_array($status, ['pending', 'underreview'], true) && $reviewed > 0 && $total > 0) {
                     $label = get_string('partiallyreviewed', 'local_spotaward') . ' (' . $reviewed . '/' . $total . ')';
-                } else if ($record->status === 'ssteamprogress' && !$hascerts) {
+                } else if ($status === 'ssteamprogress' && !$hascerts) {
                     $label = get_string('approvedawaitingss', 'local_spotaward');
                 } else {
-                    $label = get_string($record->status, 'local_spotaward');
+                    $label = local_spotaward_get_status_label($status);
                 }
                 return local_spotaward_table_cell(local_spotaward_render_badge($label), ['text' => $label]);
             })(),

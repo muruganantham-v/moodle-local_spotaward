@@ -1,5 +1,26 @@
 <?php
 // This file is part of Moodle - http://moodle.org/
+//
+// Moodle is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Moodle is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
+
+/**
+ * Report page for Spot Award System.
+ *
+ * @package   local_spotaward
+ * @copyright 2026
+ * @license   http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
+ */
 
 require_once(__DIR__ . '/../../config.php');
 require_once(__DIR__ . '/lib.php');
@@ -11,6 +32,7 @@ require_login();
 $itemid = optional_param('itemid', 0, PARAM_INT);
 $courseid = optional_param('courseid', 0, PARAM_INT);
 $activitytype = optional_param('activitytype', '', PARAM_ALPHANUMEXT);
+$page = max(0, optional_param('page', 0, PARAM_INT));
 
 $systemcontext = context_system::instance();
 $PAGE->set_context($systemcontext);
@@ -18,6 +40,7 @@ $PAGE->set_url('/local/spotaward/report.php', [
     'itemid' => $itemid,
     'courseid' => $courseid,
     'activitytype' => $activitytype,
+    'page' => $page,
 ]);
 $PAGE->set_title(get_string('courseperformancereport', 'local_spotaward'));
 $PAGE->set_heading(get_string('courseperformancereport', 'local_spotaward'));
@@ -48,7 +71,7 @@ if ($itemid > 0) {
     }
 
     $course = get_course($courseid);
-    $report = api::get_course_report($courseid, $activitytype);
+    $report = api::get_course_report($courseid, $activitytype, $page, 25);
     $backurl = new moodle_url('/local/spotaward/index.php');
 }
 
@@ -94,6 +117,15 @@ if ($itemid > 0) {
     echo local_spotaward_render_student_report_content($student, $course, $report);
 } else {
     echo local_spotaward_render_course_report_content($course, $report);
+    echo $OUTPUT->paging_bar(
+        (int)$report['studentcount'],
+        (int)$report['page'],
+        (int)$report['perpage'],
+        new moodle_url('/local/spotaward/report.php', [
+            'courseid' => $courseid,
+            'activitytype' => $activitytype,
+        ])
+    );
 }
 
 echo html_writer::end_div();

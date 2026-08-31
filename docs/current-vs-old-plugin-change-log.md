@@ -206,7 +206,8 @@ Changes include:
 
 Changes include:
 - detailed submission/export screens separated from general nomination-history visibility
-- nominators blocked from detailed review/export workflow after submission
+- nominators retain read-only access to their own submitted student details and exports;
+  review and workflow mutation actions remain restricted to assigned reviewers
 - audit actions restricted to site config access
 - several workflow screens now use tighter role-specific access checks
 

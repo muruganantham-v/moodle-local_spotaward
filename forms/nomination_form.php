@@ -1,5 +1,26 @@
 <?php
 // This file is part of Moodle - http://moodle.org/
+//
+// Moodle is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Moodle is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
+
+/**
+ * Spot award nomination form.
+ *
+ * @package   local_spotaward
+ * @copyright 2026
+ * @license   http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
+ */
 
 namespace local_spotaward\forms;
 
@@ -110,7 +131,11 @@ final class nomination_form extends moodleform {
         }
         $mform->addElement('html', '</div></div>');
 
-        $mform->addElement('html', '<div class="spotaward-form-section" style="display:none;" id="spotaward-award-section"><div class="spotaward-form-section-header">Award Categories</div><div class="spotaward-form-section-body">');
+        $mform->addElement('html', '<div class="spotaward-form-section" style="display:none;" id="spotaward-award-section">' .
+            '<div class="spotaward-form-section-header" id="spotaward-award-section-header">' .
+            '<span class="spotaward-section-header-title">Award Categories</span>' .
+            '<span id="spotaward-category-tabs-slot" class="spotaward-category-tabs-slot"></span>' .
+            '</div><div class="spotaward-form-section-body">');
 
         $mform->addElement('hidden', 'awardfieldmap', '');
         $mform->setType('awardfieldmap', PARAM_RAW_TRIMMED);

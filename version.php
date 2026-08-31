@@ -25,7 +25,8 @@
 defined('MOODLE_INTERNAL') || die();
 
 $plugin->component = 'local_spotaward';
-$plugin->version = 2026070801;
+$plugin->version = 2026081901;
 $plugin->requires = 2022041900;
-$plugin->release = '1.1.0';
+$plugin->dependencies = ['mod_certificatebeautiful' => 2026042700];
+$plugin->release = '1.1.1';
 $plugin->maturity = MATURITY_BETA;

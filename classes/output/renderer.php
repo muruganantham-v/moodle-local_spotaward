@@ -109,10 +109,12 @@ final class renderer extends plugin_renderer_base {
                 'module' => \local_spotaward_table_cell(s($row['module']), ['text' => (string)$row['module']]),
                 'statuslabel' => \local_spotaward_table_cell($row['statuslabel'], ['text' => strip_tags((string)$row['statuslabel'])]),
                 'actions' => \local_spotaward_table_cell(
-                    !empty($row['detailsurl'])
-                        ? \html_writer::link($row['detailsurl'], get_string('viewdetails', 'local_spotaward'))
-                        : '&ndash;',
-                    ['text' => !empty($row['detailsurl']) ? get_string('viewdetails', 'local_spotaward') : '', 'search' => '']
+                    !empty($row['actions'])
+                        ? $row['actions']
+                        : (!empty($row['detailsurl'])
+                            ? \html_writer::link($row['detailsurl'], get_string('viewdetails', 'local_spotaward'))
+                            : '&ndash;'),
+                    ['text' => get_string('viewdetails', 'local_spotaward'), 'search' => '']
                 ),
             ];
         }

@@ -11,3 +11,7 @@ Thumbs.db
 
 # PHP
 *.log
+
+# Scratch & IDE
+scratch/
+.agents/

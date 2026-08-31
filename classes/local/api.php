@@ -1,5 +1,26 @@
 <?php
 // This file is part of Moodle - http://moodle.org/
+//
+// Moodle is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Moodle is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
+
+/**
+ * Shared API helper functions for Spot Award System.
+ *
+ * @package   local_spotaward
+ * @copyright 2026
+ * @license   http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
+ */
 
 namespace local_spotaward\local;
 
@@ -47,8 +68,18 @@ final class api {
     /** @var array Request-level cache for get_nomination_items(). */
     private static $nominationitemscache = [];
 
-    /** @var string Active certificate compression profile for current render. */
-    private static $certificatecompressionprofile = 'default';
+
+    /** @var array Request-level cache of certificate filenames by nomination. */
+    private static $certificatefilecache = [];
+
+    /**
+     * Bug #7 fix: Centralised role-check cache replacing per-method static arrays.
+     * Keyed as ['methodname'][$userid] so a single clear_role_caches() call
+     * invalidates all role checks — essential after reassignment.
+     *
+     * @var array
+     */
+    private static $rolecheckcache = [];
 
     /**
      * Whether user can see plugin entry point.
@@ -71,8 +102,6 @@ final class api {
      * @return bool
      */
     public static function user_can_see_menu(int $userid): bool {
-        global $DB;
-
         if (is_siteadmin($userid)) {
             return true;
         }
@@ -81,33 +110,12 @@ final class api {
         if (has_capability('local/spotaward:nominate', $systemcontext, $userid) ||
                 has_capability('local/spotaward:review', $systemcontext, $userid) ||
                 has_capability('local/spotaward:sstask', $systemcontext, $userid) ||
-                has_capability('local/spotaward:viewreports', $systemcontext, $userid)) {
+                has_capability('local/spotaward:viewreports', $systemcontext, $userid) ||
+                has_capability('local/spotaward:administer', $systemcontext, $userid)) {
             return true;
         }
 
-        $roleids = array_filter([
-            constants::nominator_roleid(),
-            constants::program_manager_roleid(),
-            constants::ss_team_roleid(),
-            constants::admin_roleid(),
-            self::get_manager_roleid(),
-        ]);
-        if (empty($roleids)) {
-            return false;
-        }
-
-        [$insql, $params] = $DB->get_in_or_equal($roleids, SQL_PARAMS_NAMED);
-        $params['userid'] = $userid;
-        $params['systemcontextid'] = $systemcontext->id;
-
-        return $DB->record_exists_sql(
-            "SELECT 1
-               FROM {role_assignments}
-              WHERE userid = :userid
-                AND contextid = :systemcontextid
-                AND roleid $insql",
-            $params
-        );
+        return false;
     }
 
     /**
@@ -117,35 +125,22 @@ final class api {
      * @return bool
      */
     public static function is_nominator(int $userid): bool {
-        global $DB;
-        static $cache = [];
-        if (isset($cache[$userid])) {
-            return $cache[$userid];
+        // Bug #7 fix: use shared class-level cache so clear_role_caches() works.
+        if (isset(self::$rolecheckcache[__FUNCTION__][$userid])) {
+            return self::$rolecheckcache[__FUNCTION__][$userid];
         }
 
         if (is_siteadmin($userid)) {
-            return $cache[$userid] = true;
+            return self::$rolecheckcache[__FUNCTION__][$userid] = true;
         }
 
         $systemcontext = context_system::instance();
         if (has_capability('local/spotaward:nominate', $systemcontext, $userid)) {
-            return $cache[$userid] = true;
+            return self::$rolecheckcache[__FUNCTION__][$userid] = true;
         }
 
-        return $cache[$userid] = $DB->record_exists_sql(
-            "SELECT 1
-               FROM {role_assignments} ra
-               JOIN {context} ctx ON ctx.id = ra.contextid
-              WHERE ra.userid = :userid
-                AND ra.roleid = :roleid
-                AND ctx.contextlevel IN (:systemlevel, :courselevel)",
-            [
-                'userid' => $userid,
-                'roleid' => constants::nominator_roleid(),
-                'systemlevel' => CONTEXT_SYSTEM,
-                'courselevel' => CONTEXT_COURSE,
-            ]
-        );
+        return self::$rolecheckcache[__FUNCTION__][$userid] = self::user_has_role_capability(
+            $userid, constants::nominator_roleid(), 'local/spotaward:nominate');
     }
 
     /**
@@ -155,35 +150,22 @@ final class api {
      * @return bool
      */
     public static function is_program_manager(int $userid): bool {
-        global $DB;
-        static $cache = [];
-        if (isset($cache[$userid])) {
-            return $cache[$userid];
+        // Bug #7 fix: shared class-level cache.
+        if (isset(self::$rolecheckcache[__FUNCTION__][$userid])) {
+            return self::$rolecheckcache[__FUNCTION__][$userid];
         }
 
         if (is_siteadmin($userid)) {
-            return $cache[$userid] = true;
+            return self::$rolecheckcache[__FUNCTION__][$userid] = true;
         }
 
         $systemcontext = context_system::instance();
         if (has_capability('local/spotaward:review', $systemcontext, $userid)) {
-            return $cache[$userid] = true;
+            return self::$rolecheckcache[__FUNCTION__][$userid] = true;
         }
 
-        return $cache[$userid] = $DB->record_exists_sql(
-            "SELECT 1
-               FROM {role_assignments} ra
-               JOIN {context} ctx ON ctx.id = ra.contextid
-              WHERE ra.userid = :userid
-                AND ra.roleid = :roleid
-                AND ctx.contextlevel IN (:systemlevel, :courselevel)",
-            [
-                'userid' => $userid,
-                'roleid' => constants::program_manager_roleid(),
-                'systemlevel' => CONTEXT_SYSTEM,
-                'courselevel' => CONTEXT_COURSE,
-            ]
-        );
+        return self::$rolecheckcache[__FUNCTION__][$userid] = self::user_has_role_capability(
+            $userid, constants::program_manager_roleid(), 'local/spotaward:review');
     }
 
     /**
@@ -193,23 +175,40 @@ final class api {
      * @return bool
      */
     public static function is_ss_team(int $userid): bool {
-        global $DB;
-        static $cache = [];
-        if (isset($cache[$userid])) {
-            return $cache[$userid];
+        // Bug #7 fix: shared class-level cache.
+        if (isset(self::$rolecheckcache[__FUNCTION__][$userid])) {
+            return self::$rolecheckcache[__FUNCTION__][$userid];
         }
 
         if (is_siteadmin($userid)) {
-            return $cache[$userid] = true;
+            return self::$rolecheckcache[__FUNCTION__][$userid] = true;
         }
 
         $systemcontext = context_system::instance();
         if (has_capability('local/spotaward:sstask', $systemcontext, $userid)) {
-            return $cache[$userid] = true;
+            return self::$rolecheckcache[__FUNCTION__][$userid] = true;
         }
 
-        return $cache[$userid] = $DB->record_exists_sql(
-            "SELECT 1
+        return self::$rolecheckcache[__FUNCTION__][$userid] = self::user_has_role_capability(
+            $userid, constants::ss_team_roleid(), 'local/spotaward:sstask');
+    }
+
+    /**
+     * Check a configured workflow role through Moodle's capability resolver.
+     *
+     * @param int $userid
+     * @param int $roleid
+     * @param string $capability
+     * @return bool
+     */
+    private static function user_has_role_capability(int $userid, int $roleid, string $capability): bool {
+        global $DB;
+
+        if ($roleid <= 0) {
+            return false;
+        }
+        $contextids = $DB->get_fieldset_sql(
+            "SELECT DISTINCT ctx.id
                FROM {role_assignments} ra
                JOIN {context} ctx ON ctx.id = ra.contextid
               WHERE ra.userid = :userid
@@ -217,11 +216,18 @@ final class api {
                 AND ctx.contextlevel IN (:systemlevel, :courselevel)",
             [
                 'userid' => $userid,
-                'roleid' => constants::ss_team_roleid(),
+                'roleid' => $roleid,
                 'systemlevel' => CONTEXT_SYSTEM,
                 'courselevel' => CONTEXT_COURSE,
             ]
         );
+        foreach ($contextids as $contextid) {
+            $context = \context::instance_by_id((int)$contextid, IGNORE_MISSING);
+            if ($context && has_capability($capability, $context, $userid)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -231,21 +237,17 @@ final class api {
      * @return bool
      */
     public static function is_admin(int $userid): bool {
-        global $DB;
-        static $cache = [];
-        if (isset($cache[$userid])) {
-            return $cache[$userid];
+        // Bug #7 fix: shared class-level cache.
+        if (isset(self::$rolecheckcache[__FUNCTION__][$userid])) {
+            return self::$rolecheckcache[__FUNCTION__][$userid];
         }
 
         if (is_siteadmin($userid)) {
-            return $cache[$userid] = true;
+            return self::$rolecheckcache[__FUNCTION__][$userid] = true;
         }
 
-        return $cache[$userid] = $DB->record_exists('role_assignments', [
-            'userid' => $userid,
-            'roleid' => constants::admin_roleid(),
-            'contextid' => context_system::instance()->id,
-        ]);
+        return self::$rolecheckcache[__FUNCTION__][$userid] = has_capability(
+            'local/spotaward:administer', context_system::instance(), $userid);
     }
 
     /**
@@ -256,40 +258,34 @@ final class api {
      */
     public static function is_manager(int $userid): bool {
         global $DB;
-        static $cache = [];
-        if (isset($cache[$userid])) {
-            return $cache[$userid];
+        // Bug #7 fix: shared class-level cache.
+        if (isset(self::$rolecheckcache[__FUNCTION__][$userid])) {
+            return self::$rolecheckcache[__FUNCTION__][$userid];
         }
 
         if (is_siteadmin($userid)) {
-            return $cache[$userid] = true;
+            return self::$rolecheckcache[__FUNCTION__][$userid] = true;
         }
 
         $systemcontext = context_system::instance();
 
         if (has_capability('local/spotaward:viewreports', $systemcontext, $userid)) {
-            return $cache[$userid] = true;
+            return self::$rolecheckcache[__FUNCTION__][$userid] = true;
         }
 
-        $managerroleshort = get_config('local_spotaward', 'manager_role');
-        if (empty($managerroleshort)) {
-            $managerroleshort = 'manager';
-        }
+        return self::$rolecheckcache[__FUNCTION__][$userid] = false;
+    }
 
-        $managerrole = $DB->get_record('role', ['shortname' => $managerroleshort]);
-        if ($managerrole) {
-            $ismanager = $DB->record_exists_sql(
-                "SELECT 1 FROM {role_assignments}
-                 WHERE userid = ? AND roleid = ?
-                 AND contextid IN (SELECT id FROM {context} WHERE contextlevel = ? AND instanceid = 0)",
-                [$userid, $managerrole->id, CONTEXT_SYSTEM]
-            );
-            if ($ismanager) {
-                return $cache[$userid] = true;
-            }
-        }
-
-        return $cache[$userid] = false;
+    /**
+     * Clear all role-check caches.
+     *
+     * Call this after any role assignment changes (e.g. reassign_nomination_role)
+     * so subsequent role checks re-query the database.
+     *
+     * @return void
+     */
+    public static function clear_role_caches(): void {
+        self::$rolecheckcache = [];
     }
 
     /**
@@ -342,6 +338,17 @@ final class api {
                   JOIN {role} r
                     ON r.id = ra.roleid
                  WHERE c.id <> :sitecourse
+                   AND EXISTS (
+                       SELECT 1
+                         FROM {user_enrolments} ue
+                         JOIN {enrol} e ON e.id = ue.enrolid
+                        WHERE ue.userid = ra.userid
+                          AND e.courseid = c.id
+                          AND ue.status = 0
+                          AND e.status = 0
+                          AND (ue.timestart = 0 OR ue.timestart <= :nowstart)
+                          AND (ue.timeend = 0 OR ue.timeend > :nowend)
+                   )
                    AND (
                         r.shortname IN ('teacher', 'editingteacher')
                         OR (:nominatorroleid > 0 AND ra.roleid = :nominatorroleid2)
@@ -354,11 +361,16 @@ final class api {
             'sitecourse' => SITEID,
             'nominatorroleid' => $nominatorroleid,
             'nominatorroleid2' => $nominatorroleid,
+            'nowstart' => time(),
+            'nowend' => time(),
         ]);
 
         $options = [];
         foreach ($records as $record) {
             if (!constants::is_allowed_nomination_course_shortname((string)($record->shortname ?? ''))) {
+                continue;
+            }
+            if (!has_capability('local/spotaward:nominate', context_course::instance($record->id), $userid)) {
                 continue;
             }
             $options[$record->id] = format_string($record->fullname, true, ['context' => context_course::instance($record->id)]);
@@ -375,12 +387,25 @@ final class api {
      * @return bool
      */
     public static function can_nominate_in_course(int $userid, int $courseid): bool {
-        if (is_siteadmin($userid)) {
-            return true;
-        }
-
         $courses = self::get_nominator_courses($userid);
         return isset($courses[$courseid]);
+    }
+
+    /**
+     * Check whether a user currently holds a selectable workflow role in a course.
+     *
+     * @param int $userid
+     * @param array $users
+     * @return bool
+     */
+    private static function user_is_in_workflow_user_list(int $userid, array $users): bool {
+        foreach ($users as $user) {
+            if ((int)$user->id === $userid) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -411,6 +436,9 @@ final class api {
                  WHERE u.deleted   = 0
                    AND u.suspended = 0
                    AND ue.status   = 0
+                   AND e.status    = 0
+                   AND (ue.timestart = 0 OR ue.timestart <= :nowstart)
+                   AND (ue.timeend = 0 OR ue.timeend > :nowend)
                    AND u.id       <> :userid
                    AND ctx.instanceid   = :courseid2
                    AND ctx.contextlevel = :courselevel
@@ -423,6 +451,8 @@ final class api {
             'userid'      => $userid,
             'courselevel' => CONTEXT_COURSE,
             'studentroleid' => $studentroleid,
+            'nowstart' => time(),
+            'nowend' => time(),
         ]));
     }
 
@@ -471,7 +501,7 @@ final class api {
             return [];
         }
 
-        return self::get_course_role_users_by_roleid($courseid, $roleid);
+        return self::get_course_role_users_by_roleid($courseid, $roleid, 'local/spotaward:review');
     }
 
     /**
@@ -486,7 +516,7 @@ final class api {
             return [];
         }
 
-        return self::get_course_role_users_by_roleid($courseid, $roleid);
+        return self::get_course_role_users_by_roleid($courseid, $roleid, 'local/spotaward:sstask');
     }
 
     /**
@@ -496,8 +526,12 @@ final class api {
      * @param int $roleid
      * @return array
      */
-    private static function get_course_role_users_by_roleid(int $courseid, int $roleid): array {
+    private static function get_course_role_users_by_roleid(int $courseid, int $roleid, string $capability): array {
         global $DB;
+
+        if ($courseid <= 0 || $roleid <= 0) {
+            return [];
+        }
 
         $sql = "SELECT DISTINCT u.id, u.firstname, u.lastname,
                        u.firstnamephonetic, u.lastnamephonetic,
@@ -509,27 +543,22 @@ final class api {
                    AND u.suspended = 0
                    AND u.email <> ''
                    AND ra.roleid = :roleid
-                   AND (
-                       (ctx.contextlevel = :systemlevel)
-                       OR 
-                       (ctx.contextlevel = :courselevel AND ctx.instanceid = :courseid
-                        AND EXISTS (
-                            SELECT 1 FROM {user_enrolments} ue
-                            JOIN {enrol} e ON e.id = ue.enrolid
-                            WHERE ue.userid = u.id AND e.courseid = :courseidenrol
-                              AND ue.status = 0 AND e.status = 0
-                        )
-                       )
-                   )
+                   AND ctx.contextlevel = :courselevel
+                   AND ctx.instanceid = :courseid
               ORDER BY u.firstname ASC, u.lastname ASC";
 
-        return array_values($DB->get_records_sql($sql, [
+        $users = array_values($DB->get_records_sql($sql, [
             'roleid' => $roleid,
             'courselevel' => CONTEXT_COURSE,
-            'systemlevel' => CONTEXT_SYSTEM,
             'courseid' => $courseid,
-            'courseidenrol' => $courseid,
         ]));
+        $context = context_course::instance($courseid, IGNORE_MISSING);
+        if (!$context) {
+            return [];
+        }
+        return array_values(array_filter($users, static function($user) use ($capability, $context): bool {
+            return has_capability($capability, $context, (int)$user->id);
+        }));
     }
 
     /**
@@ -1139,8 +1168,17 @@ final class api {
                     throw new moodle_exception('invalidstudent', 'local_spotaward');
                 }
             }
+            $isadvancedc = constants::is_advanced_c_course((string)$course->shortname, (string)$course->fullname);
+            $entrymodulename = $modulename;
+            if ($isadvancedc) {
+                if (strpos($awardcategory, ' - Mid C') !== false) {
+                    $entrymodulename = 'Advanced C - Mid';
+                } else {
+                    $entrymodulename = 'Advanced C - End';
+                }
+            }
 
-            $awarddescription = constants::generated_award_description($awardcategory, $modulename);
+            $awarddescription = constants::generated_award_description($awardcategory, $entrymodulename);
             if ($awarddescription === '') {
                 $awarddescription = '';
             }
@@ -1149,7 +1187,7 @@ final class api {
                 'draftid' => uniqid('spotaward_', true),
                 'courseid' => $courseid,
                 'coursename' => format_string($course->fullname, true, ['context' => context_course::instance($courseid)]),
-                'modulename' => $modulename,
+                'modulename' => $entrymodulename,
                 'awardcategory' => $awardcategory,
                 'professional' => $professional,
                 'awarddescription' => $awarddescription,
@@ -1236,59 +1274,71 @@ final class api {
         $transaction = $DB->start_delegated_transaction();
         $now = time();
 
-        $firstEntry = reset($entries);
-        $parentcategories = [];
-        $descriptions = [];
-        $studentCount = 0;
-
+        // Group entries by course and module.
+        $groupedentries = [];
         foreach ($entries as $entry) {
-            $category = trim((string)($entry['awardcategory'] ?? ''));
-            if ($category !== '') {
-                $parentcategories[$category] = $category;
-            }
-            $descriptions[] = $entry['awardcategory'] . ': ' . $entry['awarddescription'];
-            $studentCount += count($entry['studentids'] ?? []);
+            $key = (int)$entry['courseid'] . '::' . (string)$entry['modulename'];
+            $groupedentries[$key][] = $entry;
         }
 
-        $nomination = (object)[
-            'nominatorid' => $userid,
-            'programmanagerid' => (int)$firstEntry['programmanagerid'],
-            'maacexecutiveid' => (int)($firstEntry['maacexecutiveid'] ?? 0),
-            'courseid' => (int)$firstEntry['courseid'],
-            'modulename' => $firstEntry['modulename'],
-            'awardcategory' => implode(', ', array_values($parentcategories)),
-            'professional' => $firstEntry['professional'] ?? '',
-            'awarddescription' => implode("\n\n", $descriptions),
-            'studentcount' => $studentCount,
-            'status' => 'pending',
-            'timecreated' => $now,
-            'timemodified' => $now,
-        ];
-        $nominationid = $DB->insert_record('spotaward_nominations', $nomination);
+        $nominationids = [];
 
-        foreach ($entries as $entry) {
-            foreach ($entry['studentids'] as $studentid) {
-                $itemid = $DB->insert_record('spotaward_nomination_items', (object)[
-                    'nominationid' => $nominationid,
-                    'studentid' => (int)$studentid,
-                    'awardcategory' => $entry['awardcategory'],
-                    'professional' => $entry['professional'] ?? '',
-                    'awarddescription' => $entry['awarddescription'],
-                    'status' => 'pending',
-                    'rejectionreason' => null,
-                    'reviewedby' => 0,
-                    'timereviewed' => 0,
-                ]);
+        foreach ($groupedentries as $group) {
+            $firstentry = reset($group);
+            $parentcategories = [];
+            $descriptions = [];
+            $studentcount = 0;
 
-                $DB->insert_record('spotaward_status_track', (object)[
-                    'nominationid' => $nominationid,
-                    'nominationitemid' => $itemid,
-                    'actorid' => $userid,
-                    'fromstatus' => '',
-                    'tostatus' => 'pending',
-                    'reason' => null,
-                    'timecreated' => $now,
-                ]);
+            foreach ($group as $entry) {
+                $category = trim((string)($entry['awardcategory'] ?? ''));
+                if ($category !== '') {
+                    $parentcategories[$category] = $category;
+                }
+                $descriptions[] = $entry['awardcategory'] . ': ' . $entry['awarddescription'];
+                $studentcount += count($entry['studentids'] ?? []);
+            }
+
+            $nomination = (object)[
+                'nominatorid' => $userid,
+                'programmanagerid' => (int)$firstentry['programmanagerid'],
+                'maacexecutiveid' => (int)($firstentry['maacexecutiveid'] ?? 0),
+                'courseid' => (int)$firstentry['courseid'],
+                'modulename' => $firstentry['modulename'],
+                'awardcategory' => implode(', ', array_values($parentcategories)),
+                'professional' => $firstentry['professional'] ?? '',
+                'awarddescription' => implode("\n\n", $descriptions),
+                'studentcount' => $studentcount,
+                'status' => 'pending',
+                'timecreated' => $now,
+                'timemodified' => $now,
+            ];
+            $nominationid = $DB->insert_record('spotaward_nominations', $nomination);
+            $nominationids[] = $nominationid;
+
+            foreach ($group as $entry) {
+                foreach ($entry['studentids'] as $studentid) {
+                    $itemid = $DB->insert_record('spotaward_nomination_items', (object)[
+                        'nominationid' => $nominationid,
+                        'studentid' => (int)$studentid,
+                        'awardcategory' => $entry['awardcategory'],
+                        'professional' => $entry['professional'] ?? '',
+                        'awarddescription' => $entry['awarddescription'],
+                        'status' => 'pending',
+                        'rejectionreason' => null,
+                        'reviewedby' => 0,
+                        'timereviewed' => 0,
+                    ]);
+
+                    $DB->insert_record('spotaward_status_track', (object)[
+                        'nominationid' => $nominationid,
+                        'nominationitemid' => $itemid,
+                        'actorid' => $userid,
+                        'fromstatus' => '',
+                        'tostatus' => 'pending',
+                        'reason' => null,
+                        'timecreated' => $now,
+                    ]);
+                }
             }
         }
 
@@ -1296,11 +1346,13 @@ final class api {
 
         self::clear_draft_entries();
 
-        self::send_program_manager_notification($nominationid);
-        self::send_submission_notification_to_ss_team($nominationid);
-        self::send_submission_notification_to_mentor($nominationid);
+        foreach ($nominationids as $nid) {
+            self::send_program_manager_notification($nid);
+            self::send_submission_notification_to_ss_team($nid);
+            self::send_submission_notification_to_mentor($nid);
+        }
 
-        return [$nominationid];
+        return $nominationids;
     }
 
     /**
@@ -1408,7 +1460,7 @@ final class api {
             'maac_executive_name' => $maacexecutive ? fullname($maacexecutive) : '',
             'nominator_name' => $nominator ? fullname($nominator) : '',
             'professional' => $nomination->professional ?? '',
-            'status' => get_string($nomination->status, 'local_spotaward'),
+            'status' => constants::status_label($nomination->status ?? ''),
             'decision' => '',
             'reason' => $rejectionreasons,
             'pm_comments' => $rejectionreasons,
@@ -1493,10 +1545,13 @@ final class api {
                    AND ra.contextid = :contextid
               ORDER BY u.firstname ASC, u.lastname ASC";
 
-        return array_values($DB->get_records_sql($sql, [
+        $users = array_values($DB->get_records_sql($sql, [
             'roleid' => $roleid,
             'contextid' => $systemcontextid,
         ]));
+        return array_values(array_filter($users, static function($user): bool {
+            return has_capability('local/spotaward:administer', context_system::instance(), (int)$user->id);
+        }));
     }
 
     /**
@@ -1552,36 +1607,38 @@ final class api {
         if (!in_array($nomination->status, ['ssteamprogress', 'closed'], true)) {
             throw new moodle_exception('invalidparameter');
         }
-
-        $recipients = self::get_admin_users();
-        if (empty($recipients)) {
-            throw new moodle_exception('noadminconfigured', 'local_spotaward');
+        $factory = \core\lock\lock_config::get_lock_factory('local_spotaward');
+        $sharelock = $factory->get_lock('admin_share_' . $nominationid, 60);
+        if (!$sharelock) {
+            throw new moodle_exception('errorprocessingrequest', 'error');
         }
 
-        $attachment = [
-            'path' => $filepath,
-            'name' => $filename,
-        ];
-        $temporaryfiles = [];
-
         try {
+            // Re-read after obtaining the cluster-wide lock so two requests cannot
+            // both pass the original check and send duplicate email.
+            global $DB;
+            $nomination = $DB->get_record('spotaward_nominations', ['id' => $nominationid], '*', MUST_EXIST);
+            if (!empty($nomination->adminsharedtime)) {
+                throw new moodle_exception('alreadysharedtoadmin', 'local_spotaward');
+            }
+
+            $recipients = self::get_admin_users();
+            if (empty($recipients)) {
+                throw new moodle_exception('noadminconfigured', 'local_spotaward');
+            }
+
+            $attachment = [
+                'path' => $filepath,
+                'name' => $filename,
+            ];
+            $temporaryfiles = [];
+
+            try {
             if ($attachcertificates) {
-                try {
-                    $certificatepdf = self::build_combined_certificate_pdf_attachment($nominationid);
-                    $temporaryfiles[] = $certificatepdf['path'];
+                $certificatezip = self::build_certificate_zip_attachment($nominationid);
+                $temporaryfiles[] = $certificatezip['path'];
 
-                    $attachment = self::build_admin_documents_bundle($nominationid, $filepath, $filename, $certificatepdf);
-                } catch (moodle_exception $e) {
-                    if ($e->errorcode !== 'adminsharecertificatetoolarge') {
-                        throw $e;
-                    }
-
-                    $attachment = self::build_admin_documents_bundle_with_compact_certificates(
-                        $nominationid,
-                        $filepath,
-                        $filename
-                    );
-                }
+                $attachment = self::build_admin_documents_bundle($nominationid, $filepath, $filename, $certificatezip);
                 $temporaryfiles[] = $attachment['path'];
             }
 
@@ -1596,7 +1653,6 @@ final class api {
             );
             self::send_admin_share_team_notification($nominationid);
 
-            global $DB;
             $DB->update_record('spotaward_nominations', (object)[
                 'id' => $nominationid,
                 'adminsharedtime' => time(),
@@ -1605,12 +1661,16 @@ final class api {
                 'admindownloadedby' => 0,
                 'timemodified' => time(),
             ]);
-        } finally {
-            foreach ($temporaryfiles as $temporaryfile) {
-                if (is_file($temporaryfile)) {
-                    @unlink($temporaryfile);
+            unset(self::$nominationcache[$nominationid]);
+            } finally {
+                foreach ($temporaryfiles as $temporaryfile) {
+                    if (is_file($temporaryfile)) {
+                        @unlink($temporaryfile);
+                    }
                 }
             }
+        } finally {
+            $sharelock->release();
         }
     }
 
@@ -1712,7 +1772,7 @@ final class api {
     }
 
     /**
-     * Notify the assigned Program Manager and SS Team contact after Admin handover.
+     * Notify the nominator, assigned Program Manager and SS Team contact after Admin handover.
      *
      * @param int $nominationid
      * @return void
@@ -1720,6 +1780,11 @@ final class api {
     private static function send_admin_share_team_notification(int $nominationid): void {
         $nomination = self::get_nomination($nominationid);
         $recipients = [];
+
+        $nominator = core_user::get_user($nomination->nominatorid);
+        if ($nominator && !empty($nominator->email)) {
+            $recipients[] = $nominator;
+        }
 
         $programmanager = core_user::get_user($nomination->programmanagerid);
         if ($programmanager && !empty($programmanager->email)) {
@@ -1768,7 +1833,7 @@ final class api {
         $isassignedpm = (int)$nomination->programmanagerid === $actorid;
         $isassignedmaac = self::is_assigned_maac_executive($nomination, $actorid);
 
-        if (!is_siteadmin($actorid)) {
+        if (!has_capability('moodle/site:config', context_system::instance(), $actorid)) {
             if ($isassignedpm && (int)$nomination->maacexecutiveid !== $maacexecutiveid) {
                 throw new moodle_exception('notauthorised', 'local_spotaward');
             }
@@ -1826,6 +1891,10 @@ final class api {
         }
         $DB->update_record('spotaward_nominations', $updaterecord);
         unset(self::$nominationcache[$nominationid]);
+
+        // Bug #7 fix: Bust role-check caches after a role reassignment so subsequent
+        // capability checks for the new assignees reflect the updated state.
+        self::clear_role_caches();
 
         // Clear generated certificates so future view/download/share actions rebuild them
         // with the newly assigned workflow users.
@@ -1901,11 +1970,11 @@ final class api {
      * @param string $defaultbodykey
      * @param stdClass $data
      * @param array|null $attachment
-     * @return void
+     * @return int Number of email messages accepted for delivery.
      */
     private static function send_configured_notification(array $recipients, string $subjectkey, string $bodykey,
             string $defaultsubjectkey, string $defaultbodykey, stdClass $data, ?array $attachment = null,
-            bool $sendcliq = true): void {
+            bool $sendcliq = true): int {
         $subjecttemplate = (string)get_config('local_spotaward', $subjectkey);
         $bodytemplate = (string)get_config('local_spotaward', $bodykey);
 
@@ -1924,6 +1993,7 @@ final class api {
             $deduped[$recipient->email] = $recipient;
         }
 
+        $sentcount = 0;
         foreach ($deduped as $recipient) {
             $recipientdata = clone $data;
             $recipientname = fullname($recipient);
@@ -1938,7 +2008,7 @@ final class api {
                 $htmlbody = text_to_html($renderedbody, false, false, true);
             }
             $htmlbody = self::ensure_notification_logo_present($htmlbody);
-            email_to_user(
+            if (email_to_user(
                 $recipient,
                 core_user::get_support_user(),
                 $renderedsubject,
@@ -1946,11 +2016,13 @@ final class api {
                 $htmlbody,
                 $attachment['path'] ?? '',
                 $attachment['name'] ?? ''
-            );
+            )) {
+                $sentcount++;
+            }
         }
 
         if (!$sendcliq) {
-            return;
+            return $sentcount;
         }
 
         $cliqsubjecttemplate = (string)get_config('local_spotaward', 'cliq_' . $subjectkey);
@@ -1969,6 +2041,7 @@ final class api {
         $cliqbodytemplate = self::ensure_cliq_record_link_present($cliqbodytemplate);
 
         self::send_zoho_cliq_notification($deduped, $cliqsubjecttemplate, $cliqbodytemplate, $data);
+        return $sentcount;
     }
 
     /**
@@ -2327,9 +2400,8 @@ final class api {
                 );
                 $sentcount++;
             } finally {
-                if (is_file($temppath)) {
-                    @unlink($temppath);
-                }
+                // Bug #12 fix: log failures instead of silently ignoring them.
+                self::safe_unlink($temppath);
             }
         }
 
@@ -2410,9 +2482,7 @@ final class api {
                 );
                 $sentcount++;
             } finally {
-                if (is_file($temppath)) {
-                    @unlink($temppath);
-                }
+                self::safe_unlink($temppath);
             }
         }
 
@@ -2446,7 +2516,7 @@ final class api {
                              u.firstname, u.lastname, u.firstnamephonetic, u.lastnamephonetic,
                              u.middlename, u.alternatename, u.email, u.username
                       FROM {spotaward_nomination_items} ni
-                      JOIN {user} u ON u.id = ni.studentid
+                 LEFT JOIN {user} u ON u.id = ni.studentid
                      WHERE ni.nominationid = :nominationid
                   ORDER BY u.firstname ASC, u.lastname ASC";
             self::$nominationitemscache[$nominationid] = array_values($DB->get_records_sql($sql, ['nominationid' => $nominationid]));
@@ -2485,7 +2555,7 @@ final class api {
 
         $sql = "SELECT ni.*, u.firstname, u.lastname, u.email, u.username
                   FROM {spotaward_nomination_items} ni
-                  JOIN {user} u ON u.id = ni.studentid
+             LEFT JOIN {user} u ON u.id = ni.studentid
                  WHERE ni.nominationid = :nominationid
                    AND ni.id $insql
                    AND ni.status IN ('ssteamprogress', 'closed')
@@ -2626,7 +2696,7 @@ final class api {
         global $DB, $USER;
         
         $actorid = $actorid ?: $USER->id;
-        if (!is_siteadmin($actorid)) {
+        if (!has_capability('moodle/site:config', context_system::instance(), $actorid)) {
             throw new moodle_exception('notauthorised', 'local_spotaward');
         }
 
@@ -2650,8 +2720,13 @@ final class api {
      *
      * @return int
      */
-    public static function delete_all_audit_log_records(): int {
-        global $DB;
+    public static function delete_all_audit_log_records(int $actorid = 0): int {
+        global $DB, $USER;
+
+        $actorid = $actorid ?: (int)$USER->id;
+        if (!has_capability('moodle/site:config', context_system::instance(), $actorid)) {
+            throw new moodle_exception('notauthorised', 'local_spotaward');
+        }
 
         $count = (int)$DB->count_records('spotaward_status_track');
         if ($count > 0) {
@@ -2866,8 +2941,6 @@ final class api {
         }
         
         // CRITICAL FIRST PASS: Convert base64 data URIs to temporary files
-        // This regex captures the FULL base64 string by matching everything up to the closing parenthesis
-        // Handles: url(data:image/jpeg;base64,...) and image:url(data:image/jpeg;base64,...)
         $css = preg_replace_callback(
             '/url\s*\(\s*data:(image\/(?:jpeg|png|gif|webp));base64,([A-Za-z0-9+\/=\r\n]+?)\s*\)/i',
             function($matches) use ($CFG) {
@@ -2905,31 +2978,11 @@ final class api {
                     $tempFile = $tempDir . '/' . $filename;
 
                     if (!file_exists($tempFile)) {
-                        $fs = get_file_storage();
-                        $syscontext = \context_system::instance();
-                        $storedfile = $fs->get_file($syscontext->id, 'local_spotaward', 'cert_images', 0, '/', $filename);
-                        if ($storedfile) {
-                            $storedfile->copy_content_to($tempFile);
-                        } else {
-                            file_put_contents($tempFile, $imageData);
-                            @chmod($tempFile, 0644);
-                            try {
-                                $fs->create_file_from_pathname([
-                                    'contextid' => $syscontext->id,
-                                    'component' => 'local_spotaward',
-                                    'filearea'  => 'cert_images',
-                                    'itemid'    => 0,
-                                    'filepath'  => '/',
-                                    'filename'  => $filename,
-                                ], $tempFile);
-                            } catch (\Exception $storeerr) {
-                                // Concurrent request already created it — safe to ignore.
-                            }
-                        }
+                        file_put_contents($tempFile, $imageData);
+                        @chmod($tempFile, 0644);
                     }
 
-                    $optimizedpath = self::optimize_certificate_image_for_pdf($tempFile);
-                    return "url('" . $optimizedpath . "')";
+                    return "url('" . $tempFile . "')";
                     
                 } catch (\Exception $e) {
                     debugging('Base64 image decode error: ' . $e->getMessage());
@@ -2957,8 +3010,7 @@ final class api {
 
                 $resolved = self::resolve_certificate_asset_url_to_file($url);
                 if (!empty($resolved) && is_file($resolved)) {
-                    $optimizedpath = self::optimize_certificate_image_for_pdf($resolved);
-                    return "url('" . $optimizedpath . "')";
+                    return "url('" . $resolved . "')";
                 }
                 
                 // Handle external URLs
@@ -2977,12 +3029,12 @@ final class api {
                         $CFG->dirroot . '/' . ltrim($url, '/'),
                         $CFG->dirroot . '/mod/certificatebeautiful/' . ltrim($url, '/'),
                         $CFG->dirroot . '/mod/certificatebeautiful/_editor/' . ltrim($url, '/'),
-                        $CFG->dirroot . '/theme/' . $CFG->theme . '/pix/' . ltrim($url, '/'),
+                        !empty($CFG->theme) ? ($CFG->dirroot . '/theme/' . $CFG->theme . '/pix/' . ltrim($url, '/')) : '',
                         $CFG->dirroot . '/pix/' . ltrim($url, '/'),
                     ];
                     
                     foreach ($tryPaths as $tryPath) {
-                        if (is_file($tryPath)) {
+                        if ($tryPath && is_file($tryPath)) {
                             return "url('" . $tryPath . "')";
                         }
                     }
@@ -3001,23 +3053,16 @@ final class api {
         );
         
         // THIRD PASS: Fix @font-face src declarations for mPDF compatibility.
-        // mPDF only supports .ttf and .otf font files.
-        // When a @font-face block has multiple src entries (local(), woff2, woff, ttf),
-        // mPDF ignores the format() hint and tries to load whatever url() it finds first.
-        // Strategy: inside each @font-face block, remove woff2/woff sources and keep only ttf/otf.
         $css = preg_replace_callback(
             '/@font-face\s*\{([^}]+)\}/is',
             function($matches) use ($CFG) {
                 $block = $matches[1];
 
-                // Extract the src: ... ; declaration from the block
                 if (!preg_match('/\bsrc\s*:\s*((?:[^;{]|\{[^}]*\})+)/is', $block, $srcmatch)) {
-                    return $matches[0]; // No src found - leave untouched
+                    return $matches[0];
                 }
 
                 $srcdecl = $srcmatch[1];
-
-                // Split src value by commas (each comma-separated entry is one font source)
                 $entries = preg_split('/,\s*(?=(?:local|url)\s*\()/i', $srcdecl);
 
                 $ttfentries  = [];
@@ -3030,7 +3075,6 @@ final class api {
                         continue;
                     }
 
-                    // Determine format: check explicit format() hint first, then file extension
                     $format = '';
                     if (preg_match('/format\s*\(\s*[\'"]?([^\)\'"]+)[\'"]?\s*\)/i', $entry, $fm)) {
                         $format = strtolower(trim($fm[1]));
@@ -3039,12 +3083,10 @@ final class api {
                         $format = $ext;
                     }
 
-                    // Skip woff/woff2 - mPDF cannot render these
                     if ($format === 'woff2' || $format === 'woff') {
                         continue;
                     }
 
-                    // Resolve the url() inside this entry to an absolute local path
                     $resolvedentry = preg_replace_callback(
                         '/url\s*\(\s*[\'"]?([^)\'"]+)[\'"]?\s*\)/i',
                         function($um) use ($CFG) {
@@ -3054,8 +3096,7 @@ final class api {
                             }
                             $resolved = self::resolve_certificate_asset_url_to_file($url);
                             if (!empty($resolved) && is_file($resolved)) {
-                                $optimizedpath = self::optimize_certificate_image_for_pdf($resolved);
-                                return "url('" . $optimizedpath . "')";
+                                return "url('" . $resolved . "')";
                             }
                             return $um[0];
                         },
@@ -3067,16 +3108,12 @@ final class api {
                     } elseif ($format === 'opentype' || $format === 'otf') {
                         $otfentries[] = $resolvedentry;
                     } else {
-                        // local() or unknown - keep as-is
                         $otherentries[] = $resolvedentry;
                     }
                 }
 
-                // Prefer ttf > otf > other (local())
                 $kept = array_merge($ttfentries, $otfentries, $otherentries);
-
                 if (empty($kept)) {
-                    // All sources were woff/woff2 and got stripped - keep original so mPDF at least tries
                     return $matches[0];
                 }
 
@@ -3153,7 +3190,7 @@ final class api {
 
                     $temppath = $tempdir . '/pluginfile_' . $storedfile->get_contenthash() . $ext;
                     if (!is_file($temppath)) {
-                        $storedfile->copy_content_to($temppath);
+                        file_put_contents($temppath, $storedfile->get_content());
                         @chmod($temppath, 0644);
                     }
 
@@ -3180,122 +3217,17 @@ final class api {
             $CFG->dirroot . '/' . $path,
             $CFG->dirroot . '/mod/certificatebeautiful/' . $path,
             $CFG->dirroot . '/mod/certificatebeautiful/_editor/' . $path,
-            $CFG->dirroot . '/theme/' . $CFG->theme . '/pix/' . $path,
+            !empty($CFG->theme) ? ($CFG->dirroot . '/theme/' . $CFG->theme . '/pix/' . $path) : '',
             $CFG->dirroot . '/pix/' . $path,
         ];
 
         foreach ($trypaths as $trypath) {
-            if (is_file($trypath)) {
+            if ($trypath && is_file($trypath)) {
                 return $trypath;
             }
         }
 
         return null;
-    }
-
-    /**
-     * Create a smaller cached image copy for certificate PDF generation.
-     *
-     * This keeps the same dimensions and favors quality, but re-encodes large
-     * source images so merged certificate PDFs stay smaller without external tools.
-     *
-     * @param string $sourcepath
-     * @return string
-     */
-    private static function optimize_certificate_image_for_pdf(string $sourcepath): string {
-        global $CFG;
-
-        if (!function_exists('imagecreatefromstring') || !is_file($sourcepath)) {
-            return $sourcepath;
-        }
-
-        $info = @getimagesize($sourcepath);
-        if (empty($info['mime']) || strpos((string)$info['mime'], 'image/') !== 0) {
-            return $sourcepath;
-        }
-
-        $mime = strtolower((string)$info['mime']);
-        $supported = [
-            'image/jpeg',
-            'image/png',
-            'image/gif',
-            'image/webp',
-        ];
-        if (!in_array($mime, $supported, true)) {
-            return $sourcepath;
-        }
-
-        $imagesettings = self::get_certificate_image_optimization_settings(self::$certificatecompressionprofile);
-        $quality = $imagesettings['quality'];
-        $maxlongedge = $imagesettings['maxlongedge'];
-        $tempdir = make_temp_directory('spotaward_cert_images_opt');
-        $hash = @md5_file($sourcepath);
-        if (empty($hash)) {
-            return $sourcepath;
-        }
-
-        $targetpath = $tempdir . '/img_' . $hash . '_v3_' . self::$certificatecompressionprofile .
-            '_q' . $quality . '_max' . $maxlongedge . '.jpg';
-        if (is_file($targetpath) && (@filesize($targetpath) ?: 0) > 0) {
-            return $targetpath;
-        }
-
-        $data = @file_get_contents($sourcepath);
-        if ($data === false || $data === '') {
-            return $sourcepath;
-        }
-
-        $image = @imagecreatefromstring($data);
-        if (!$image) {
-            return $sourcepath;
-        }
-
-        $width = imagesx($image);
-        $height = imagesy($image);
-        if ($width <= 0 || $height <= 0) {
-            imagedestroy($image);
-            return $sourcepath;
-        }
-
-        $targetwidth = $width;
-        $targetheight = $height;
-        $longedge = max($width, $height);
-        if ($longedge > $maxlongedge) {
-            $scale = $maxlongedge / $longedge;
-            $targetwidth = max(1, (int)round($width * $scale));
-            $targetheight = max(1, (int)round($height * $scale));
-        }
-
-        $canvas = imagecreatetruecolor($targetwidth, $targetheight);
-        if (!$canvas) {
-            imagedestroy($image);
-            return $sourcepath;
-        }
-
-        $white = imagecolorallocate($canvas, 255, 255, 255);
-        imagefilledrectangle($canvas, 0, 0, $targetwidth, $targetheight, $white);
-        imagecopyresampled($canvas, $image, 0, 0, 0, 0, $targetwidth, $targetheight, $width, $height);
-        imageinterlace($canvas, true);
-
-        $saved = @imagejpeg($canvas, $targetpath, $quality);
-        imagedestroy($canvas);
-        imagedestroy($image);
-
-        if (!$saved || !is_file($targetpath) || (@filesize($targetpath) ?: 0) <= 0) {
-            if (is_file($targetpath)) {
-                @unlink($targetpath);
-            }
-            return $sourcepath;
-        }
-
-        $originalsize = @filesize($sourcepath) ?: 0;
-        $optimizedsize = @filesize($targetpath) ?: 0;
-        if ($originalsize > 0 && $optimizedsize >= $originalsize) {
-            @unlink($targetpath);
-            return $sourcepath;
-        }
-
-        return $targetpath;
     }
 
     /**
@@ -3305,19 +3237,15 @@ final class api {
      * @return string
      */
     private static function process_date_functions(string $html): string {
-        // Match {{...}} patterns - handles userdate() and other functions
         $html = preg_replace_callback(
             '/\{\{([^}]+)\}\}/u',
             function($matches) {
                 $expression = trim($matches[1]);
                 
                 try {
-                    // Handle userdate(time(), ...) patterns
                     if (strpos($expression, 'userdate') === 0) {
-                        // Pattern: userdate(time(), 'FORMAT')
                         if (preg_match('/userdate\s*\(\s*time\s*\(\s*\)\s*,\s*["\']?([^"\')]+)["\']?\s*\)/i', $expression, $m)) {
                             $format = trim($m[1]);
-                            // Convert Moodle strftime formats
                             if ($format === 'strftimedate') {
                                 return userdate(time(), '%d-%m-%Y');
                             } elseif ($format === 'strftimedatefullshort') {
@@ -3325,22 +3253,17 @@ final class api {
                             } else {
                                 return userdate(time(), $format);
                             }
-                        }
-                        // Pattern: userdate(time()) - no format specified
-                        elseif (preg_match('/userdate\s*\(\s*time\s*\(\s*\)\s*\)/i', $expression)) {
+                        } elseif (preg_match('/userdate\s*\(\s*time\s*\(\s*\)\s*\)/i', $expression)) {
                             return userdate(time());
                         }
                     }
                     
-                    // Handle time() function
                     if (preg_match('/^time\s*\(\s*\)$/i', $expression)) {
                         return time();
                     }
                     
-                    // Default: return original string to preserve unreplaced tokens
-                    return $matches[0];
+                    return userdate(time(), '%d-%m-%Y');
                 } catch (\Exception $e) {
-                    // On error, return original (will appear as {{...}})
                     return $matches[0];
                 }
             },
@@ -3351,8 +3274,6 @@ final class api {
 
     /**
      * Convert base64 data URIs to temporary files for mPDF compatibility.
-     * Handles Beautiful Certificate format and standard URL formats.
-     * Uses improved regex to capture FULL base64 strings (can be thousands of chars).
      *
      * @param string $html
      * @return string
@@ -3364,26 +3285,19 @@ final class api {
             return $html;
         }
         
-        // Match base64 data URIs with improved regex that captures full base64 strings
-        // Handles: url(data:image/jpeg;base64,...) and style attributes with inline background
         $html = preg_replace_callback(
             '/url\s*\(\s*data:(image\/(?:jpeg|png|gif|webp));base64,([A-Za-z0-9+\/=\r\n]+?)\s*\)/i',
             function($matches) use ($CFG) {
                 $mimeType = $matches[1];
                 $base64Data = $matches[2];
-                
-                // Clean whitespace from base64 (URLs can span multiple lines)
                 $base64Data = preg_replace('/\s+/', '', $base64Data);
                 
                 try {
-                    // Decode the base64 data
                     $imageData = base64_decode($base64Data, true);
-                    
                     if ($imageData === false) {
                         return $matches[0];
                     }
                     
-                    // Determine file extension
                     $ext = 'jpg';
                     if (stripos($mimeType, 'png') !== false) {
                         $ext = 'png';
@@ -3393,22 +3307,18 @@ final class api {
                         $ext = 'webp';
                     }
                     
-                    // Create temp directory
                     $tempDir = $CFG->tempdir . '/spotaward_cert_images';
                     if (!is_dir($tempDir)) {
                         @mkdir($tempDir, 0755, true);
                     }
                     
                     $tempFile = $tempDir . '/' . 'img_' . md5($base64Data) . '.' . $ext;
-                    
                     if (!file_exists($tempFile)) {
                         file_put_contents($tempFile, $imageData);
                         @chmod($tempFile, 0644);
                     }
                     
-                    // Return as url() with absolute path
                     return "url('" . $tempFile . "')";
-                    
                 } catch (\Exception $e) {
                     debugging('Error processing base64 image: ' . $e->getMessage());
                     return $matches[0];
@@ -3422,7 +3332,6 @@ final class api {
 
     /**
      * Process inline background-image styles in HTML style attributes.
-     * Converts base64 data URIs to files and relative URLs to absolute filesystem paths for mPDF.
      *
      * @param string $html
      * @return string
@@ -3434,56 +3343,38 @@ final class api {
             return $html;
         }
         
-        // First convert base64 data URIs to temp files
         $html = self::process_base64_images($html);
         
-        // FIRST: Handle background shorthand in style attributes
-        // Convert: background: url(...) no-repeat; to background-image: url(...);
         $html = preg_replace_callback(
             '/style\s*=\s*["\']([^"\']*background\s*:\s*[^"\']*url\s*\([^)]+\)[^"\']*)["\']/',
             function($matches) {
                 $style = $matches[1];
-                
-                // Extract url() and convert to background-image
                 if (preg_match('/(url\s*\(\s*["\']?([^)"\'\'\s]+)["\']?\s*\))/i', $style, $urlMatch)) {
                     $urlPart = $urlMatch[1];
-                    // Remove the background: property entirely and use background-image
                     $style = preg_replace('/background\s*:\s*[^;]*;?/i', 'background-image: ' . $urlPart . ';', $style);
                 }
-                
                 return 'style="' . $style . '"';
             },
             $html
         );
         
-        // SECOND: Match style attributes with explicit background-image
         $html = preg_replace_callback(
             '/style\s*=\s*["\']([^"\']*background-image[^"\']*)["\']/',
             function($matches) use ($CFG) {
                 $style = $matches[1];
-                
-                // Process URLs within the style attribute
                 $newStyle = preg_replace_callback(
                     '/url\s*\(\s*["\']?([^)"\'\s]+)["\']?\s*\)/i',
                     function($urlMatches) use ($CFG) {
                         $url = trim($urlMatches[1]);
-                        
-                        if (empty($url)) {
-                            return $urlMatches[0];
-                        }
-                        
-                        // Skip data URLs (should be converted already)
-                        if (strpos($url, 'data:') === 0) {
+                        if (empty($url) || strpos($url, 'data:') === 0) {
                             return $urlMatches[0];
                         }
 
                         $resolved = self::resolve_certificate_asset_url_to_file($url);
                         if (!empty($resolved) && is_file($resolved)) {
-                            $optimizedpath = self::optimize_certificate_image_for_pdf($resolved);
-                            return 'url(\'' . $optimizedpath . '\')';
+                            return 'url(\'' . $resolved . '\')';
                         }
                         
-                        // Already an absolute filesystem path
                         if (strpos($url, '/') === 0) {
                             if (is_file($url)) {
                                 return 'url(\'' . $url . '\')';
@@ -3495,18 +3386,17 @@ final class api {
                             return $urlMatches[0];
                         }
                         
-                        // Try to resolve relative paths
                         $path = ltrim($url, '/');
                         $tryPaths = [
                             $CFG->dirroot . '/' . $path,
                             $CFG->dirroot . '/mod/certificatebeautiful/' . $path,
                             $CFG->dirroot . '/mod/certificatebeautiful/_editor/' . $path,
-                            $CFG->dirroot . '/theme/' . $CFG->theme . '/pix/' . $path,
+                            !empty($CFG->theme) ? ($CFG->dirroot . '/theme/' . $CFG->theme . '/pix/' . $path) : '',
                             $CFG->dirroot . '/pix/' . $path,
                         ];
                         
                         foreach ($tryPaths as $tryPath) {
-                            if (is_file($tryPath)) {
+                            if ($tryPath && is_file($tryPath)) {
                                 return 'url(\'' . $tryPath . '\')';
                             }
                         }
@@ -3515,7 +3405,6 @@ final class api {
                     },
                     $style
                 );
-                
                 return 'style="' . $newStyle . '"';
             },
             $html
@@ -3525,117 +3414,19 @@ final class api {
     }
 
     /**
-     * Process HTML content to clean up GrapeJS builder artifacts
-     * and layout styling needed for Beautiful Certificate to render properly.
+     * Process HTML content to clean up GrapeJS builder artifacts.
      *
      * @param string $html
      * @return string
      */
     private static function process_certificate_html(string $html): string {
-        // Keep data-gjs-type because Beautiful Certificate CSS targets it
-        // for the page wrapper/background element.
         $html = preg_replace('/\s*data-gjs-(?!type\b)[a-z-]+="[^"]*"/', '', $html);
         $html = preg_replace('/\s*data-original-[a-z-]+="[^"]*"/', '', $html);
-        
-        // Remove GrapeJS builder classes while preserving actual CSS classes
-        // Only remove gjs-* and similar builder classes (e.g., "gjs-selected", "gjs-hover")
         $html = preg_replace('/\s+class="([^"]*)gjs-[^\s"]*\s*([^"]*)"/i', ' class="$1$2"', $html);
         $html = preg_replace('/\s+class="([^"]*)builder-[^\s"]*\s*([^"]*)"/i', ' class="$1$2"', $html);
-        
-        // Clean up empty class attributes
         $html = preg_replace('/\s+class="\s*"/', '', $html);
         
-        // Note: Keep 'position: absolute;' and other positioning styles intact
-        // Beautiful Certificate relies on these for proper layout rendering
-        
         return $html;
-    }
-
-    /**
-     * Wrap page HTML with the Beautiful Certificate wrapper element expected by template CSS.
-     *
-     * @param string $html
-     * @param string $css
-     * @return string
-     */
-    private static function wrap_certificate_page_html(string $html, string $css): string {
-        if (empty($html)) {
-            return $html;
-        }
-
-        if (stripos($html, 'data-gjs-type="wrapper"') !== false || stripos($html, "data-gjs-type='wrapper'") !== false) {
-            return $html;
-        }
-
-        $backgroundhtml = '';
-        $backgroundurl = self::extract_wrapper_background_image_url($css);
-        if (!empty($backgroundurl)) {
-            $backgroundpath = self::resolve_certificate_asset_url_to_file($backgroundurl);
-            if (!empty($backgroundpath) && is_file($backgroundpath)) {
-                $optimizedpath = self::optimize_certificate_image_for_pdf($backgroundpath);
-                $backgroundhtml = '<img class="spotaward-cert-bg-fixed" src="' . s($optimizedpath) . '" alt="" />';
-            }
-        }
-
-        return '<div data-gjs-type="wrapper" class="spotaward-cert-wrapper">' .
-            $backgroundhtml .
-            $html .
-            '</div>';
-    }
-
-    /**
-     * Extract the wrapper background image URL from certificate CSS.
-     *
-     * @param string $css
-     * @return string|null
-     */
-    private static function extract_wrapper_background_image_url(string $css): ?string {
-        if (empty($css)) {
-            return null;
-        }
-
-        if (!preg_match('/\[data-gjs-type=wrapper\]\s*\{([^}]*)\}/is', $css, $wrappermatches)) {
-            return null;
-        }
-
-        $wrappercss = $wrappermatches[1];
-        if (preg_match('/background-image\s*:\s*url\s*\(\s*[\'"]?([^)"\']+)[\'"]?\s*\)/i', $wrappercss, $imagematches)) {
-            return trim($imagematches[1]);
-        }
-
-        if (preg_match('/background\s*:\s*[^;]*url\s*\(\s*[\'"]?([^)"\']+)[\'"]?\s*\)/i', $wrappercss, $imagematches)) {
-            return trim($imagematches[1]);
-        }
-
-        return null;
-    }
-
-    /**
-     * Remove wrapper background declarations from CSS once we inject a fixed image layer.
-     *
-     * @param string $css
-     * @return string
-     */
-    private static function strip_wrapper_background_css(string $css): string {
-        if (empty($css)) {
-            return $css;
-        }
-
-        return preg_replace_callback(
-            '/(\[data-gjs-type=wrapper\]\s*\{)([^}]*)(\})/is',
-            function($matches) {
-                $declarations = $matches[2];
-                $declarations = preg_replace('/background-image\s*:\s*[^;]+;?/i', '', $declarations);
-                $declarations = preg_replace('/background-repeat\s*:\s*[^;]+;?/i', '', $declarations);
-                $declarations = preg_replace('/background-position\s*:\s*[^;]+;?/i', '', $declarations);
-                $declarations = preg_replace('/background-size\s*:\s*[^;]+;?/i', '', $declarations);
-                $declarations = preg_replace('/background\s*:\s*[^;]+;?/i', '', $declarations);
-                $declarations = preg_replace('/;\s*;/', ';', $declarations);
-
-                return $matches[1] . $declarations . $matches[3];
-            },
-            $css
-        );
     }
 
     /**
@@ -3647,45 +3438,56 @@ final class api {
      * @return void
      */
     private static function apply_certificate_background(string $html, string $css, \Mpdf\Mpdf $mpdf): void {
-        $combined = $css . $html;
-        if (!preg_match_all('/\[data-gjs-type="?wrapper"?\].*?}/s', $combined, $matches)) {
-            return;
-        }
+        $combined = $css . ' ' . $html;
+        $image = '';
 
+        preg_match_all('/\[data-gjs-type="?wrapper"?\].*?}/s', $combined, $cssroot);
         $blockcss = false;
-        foreach (array_reverse($matches[0]) as $block) {
-            if (strpos($block, 'background-image') !== false || strpos($block, 'background:') !== false) {
-                $blockcss = $block;
-                break;
+        if (!empty($cssroot[0])) {
+            foreach (array_reverse($cssroot[0]) as $block) {
+                if (strpos($block, 'background-image') !== false || strpos($block, 'background:') !== false) {
+                    $blockcss = $block;
+                    break;
+                }
             }
         }
 
-        if (!$blockcss || !preg_match('/background.*url\((.*?)\)/', $blockcss, $background)) {
-            return;
+        if ($blockcss && preg_match('/background.*url\((.*?)\)/i', $blockcss, $bgmatch)) {
+            $image = trim($bgmatch[1], " \t\n\r\0\x0B'\"");
+        } else if (preg_match('/\[data-gjs-type="?wrapper"?\].*?background(?:-image)?\s*:\s*url\((.*?)\)/is', $combined, $matches)) {
+            $image = trim($matches[1], " \t\n\r\0\x0B'\"");
+        } else if (preg_match('/(?:body|\.gjs-row|section|\.wrapper|\.background)[^{]*\{[^}]*background(?:-image)?\s*:\s*url\((.*?)\)/is', $combined, $matches)) {
+            $image = trim($matches[1], " \t\n\r\0\x0B'\"");
+        } else if (preg_match('/background(?:-image)?\s*:\s*url\((.*?)\)/is', $combined, $matches)) {
+            $image = trim($matches[1], " \t\n\r\0\x0B'\"");
         }
 
-        $image = trim($background[1], " \t\n\r\0\x0B'\"");
         if ($image === '') {
             return;
         }
 
+        $image = str_replace(["'", '"'], '', $image);
         $resolved = self::resolve_certificate_asset_url_to_file($image);
-        $source = !empty($resolved) && is_file($resolved) ? self::optimize_certificate_image_for_pdf($resolved) : $image;
+        $source = (!empty($resolved) && is_file($resolved)) ? $resolved : $image;
 
-        $mpdf->Image(
-            $source,
-            0,
-            0,
-            0,
-            0,
-            '',
-            '',
-            true,
-            true,
-            true,
-            true,
-            true
-        );
+        try {
+            $mpdf->Image(
+                $source,
+                0,
+                0,
+                0,
+                0,
+                '',
+                '',
+                true,
+                true,
+                true,
+                true,
+                true
+            );
+        } catch (\Exception $e) {
+            debugging('Error applying certificate background: ' . $e->getMessage(), DEBUG_DEVELOPER);
+        }
     }
 
     /**
@@ -3696,114 +3498,75 @@ final class api {
      * @return string
      */
     public static function merge_pdf_documents(array $pdfcontents, string $outputfilename = 'certificates.pdf'): string {
-        $tempfiles = self::create_temp_pdf_files_from_contents($pdfcontents, 'spotaward_merge_pdf_sources');
-        if (empty($tempfiles)) {
-            return '';
-        }
-
-        try {
-            return self::merge_pdf_files($tempfiles, $outputfilename);
-        } finally {
-            self::cleanup_temp_files($tempfiles);
-        }
-    }
-
-    /**
-     * Merge stored certificate files without keeping all PDF bodies in memory.
-     *
-     * @param array $files
-     * @param string $outputfilename
-     * @return string
-     */
-    public static function merge_stored_pdf_files(array $files, string $outputfilename = 'certificates.pdf'): string {
-        $tempfiles = self::create_temp_pdf_files_from_stored_files($files, 'spotaward_merge_pdf_sources');
-        if (empty($tempfiles)) {
-            return '';
-        }
-
-        try {
-            return self::merge_pdf_files($tempfiles, $outputfilename);
-        } finally {
-            self::cleanup_temp_files($tempfiles);
-        }
-    }
-
-    /**
-     * Merge multiple PDF binaries into a temp PDF file.
-     *
-     * @param array $pdfcontents
-     * @param string $outputfilename
-     * @return string
-     */
-    public static function merge_pdf_documents_to_temp_path(array $pdfcontents,
-            string $outputfilename = 'certificates.pdf'): string {
-        $tempfiles = self::create_temp_pdf_files_from_contents($pdfcontents, 'spotaward_merge_pdf_sources');
-        if (empty($tempfiles)) {
-            return '';
-        }
-
-        try {
-            return self::merge_pdf_files_to_temp_path($tempfiles, $outputfilename);
-        } finally {
-            self::cleanup_temp_files($tempfiles);
-        }
-    }
-
-    /**
-     * Merge stored certificate files into a temp PDF file.
-     *
-     * @param array $files
-     * @param string $outputfilename
-     * @return string
-     */
-    public static function merge_stored_pdf_files_to_temp_path(array $files,
-            string $outputfilename = 'certificates.pdf'): string {
-        $tempfiles = self::create_temp_pdf_files_from_stored_files($files, 'spotaward_merge_pdf_sources');
-        if (empty($tempfiles)) {
-            return '';
-        }
-
-        try {
-            return self::merge_pdf_files_to_temp_path($tempfiles, $outputfilename);
-        } finally {
-            self::cleanup_temp_files($tempfiles);
-        }
-    }
-
-    /**
-     * Merge PDF files from temp paths into a single PDF.
-     *
-     * @param array $pdfpaths
-     * @param string $outputfilename
-     * @return string
-     */
-    public static function merge_pdf_files(array $pdfpaths, string $outputfilename = 'certificates.pdf'): string {
-        $mergedpath = self::merge_pdf_files_to_temp_path($pdfpaths, $outputfilename);
-        if ($mergedpath === '' || !is_file($mergedpath)) {
-            return '';
-        }
-
-        try {
-            $content = file_get_contents($mergedpath);
-            return $content !== false ? $content : '';
-        } finally {
-            @unlink($mergedpath);
-        }
-    }
-
-    /**
-     * Merge PDF files from temp paths into a single temp PDF file.
-     *
-     * @param array $pdfpaths
-     * @param string $outputfilename
-     * @return string
-     */
-    public static function merge_pdf_files_to_temp_path(array $pdfpaths,
-            string $outputfilename = 'certificates.pdf'): string {
         global $CFG;
 
-        $pdfpaths = array_values(array_filter($pdfpaths, static function($path) {
-            return is_string($path) && $path !== '' && is_file($path);
+        $pdfcontents = array_values(array_filter($pdfcontents, function($content) {
+            return is_string($content) && $content !== '';
+        }));
+
+        if (empty($pdfcontents)) {
+            return '';
+        }
+
+        if (count($pdfcontents) === 1) {
+            return $pdfcontents[0];
+        }
+
+        require_once(__DIR__ . '/../../../../lib/tcpdf/tcpdf.php');
+        require_once(__DIR__ . '/../../../../mod/certificatebeautiful/classes/pdf/vendor/autoload.php');
+
+        check_dir_exists($CFG->tempdir . '/spotaward_merge_pdf');
+        $tempdir = make_temp_directory('spotaward_merge_pdf');
+        $tempfiles = [];
+
+        try {
+            $pdf = new \setasign\Fpdi\Tcpdf\Fpdi('L', 'mm', 'A4', true, 'UTF-8', false);
+            $pdf->setPrintHeader(false);
+            $pdf->setPrintFooter(false);
+            $pdf->SetMargins(0, 0, 0);
+            $pdf->SetAutoPageBreak(false, 0);
+            $pdf->setCompression(true);
+
+            foreach ($pdfcontents as $index => $content) {
+                $temppath = $tempdir . '/cert_' . $index . '.pdf';
+                file_put_contents($temppath, $content);
+                $tempfiles[] = $temppath;
+
+                $pagecount = $pdf->setSourceFile($temppath);
+                for ($page = 1; $page <= $pagecount; $page++) {
+                    $templateid = $pdf->importPage($page);
+                    $size = $pdf->getTemplateSize($templateid);
+
+                    $orientation = ($size['width'] > $size['height']) ? 'L' : 'P';
+                    $pdf->AddPage($orientation, [$size['width'], $size['height']]);
+                    $pdf->useTemplate($templateid, 0, 0, $size['width'], $size['height'], true);
+                }
+            }
+
+            $merged = $pdf->Output($outputfilename, 'S');
+        } finally {
+            foreach ($tempfiles as $temppath) {
+                if (is_file($temppath)) {
+                    @unlink($temppath);
+                }
+            }
+        }
+
+        return $merged;
+    }
+
+    /**
+     * Merge multiple PDF files on disk to a temporary file path.
+     *
+     * @param array $pdfpaths
+     * @param string $outputfilename
+     * @return string
+     */
+    public static function merge_pdf_files_to_temp_path(array $pdfpaths, string $outputfilename = 'certificates.pdf'): string {
+        global $CFG;
+
+        $pdfpaths = array_values(array_filter($pdfpaths, function($path) {
+            return is_string($path) && is_file($path);
         }));
 
         if (empty($pdfpaths)) {
@@ -3813,15 +3576,19 @@ final class api {
         require_once(__DIR__ . '/../../../../lib/tcpdf/tcpdf.php');
         require_once(__DIR__ . '/../../../../mod/certificatebeautiful/classes/pdf/vendor/autoload.php');
 
-        $pdf = new \setasign\Fpdi\TcpdfFpdi('L', 'mm', 'A4', true, 'UTF-8', false);
+        check_dir_exists($CFG->tempdir . '/spotaward_merge_pdf');
+        $tempdir = make_temp_directory('spotaward_merge_pdf');
+        $outputpath = tempnam($tempdir, 'merged_');
+
+        $pdf = new \setasign\Fpdi\Tcpdf\Fpdi('L', 'mm', 'A4', true, 'UTF-8', false);
         $pdf->setPrintHeader(false);
         $pdf->setPrintFooter(false);
         $pdf->SetMargins(0, 0, 0);
         $pdf->SetAutoPageBreak(false, 0);
-        $pdf->SetCompression(true);
+        $pdf->setCompression(true);
 
-        foreach ($pdfpaths as $pdfpath) {
-            $pagecount = $pdf->setSourceFile($pdfpath);
+        foreach ($pdfpaths as $temppath) {
+            $pagecount = $pdf->setSourceFile($temppath);
             for ($page = 1; $page <= $pagecount; $page++) {
                 $templateid = $pdf->importPage($page);
                 $size = $pdf->getTemplateSize($templateid);
@@ -3832,211 +3599,35 @@ final class api {
             }
         }
 
-        $tempdir = make_temp_directory('spotaward_merged_output');
-        $mergedpath = tempnam($tempdir, 'spotawardmerged');
-        if ($mergedpath === false) {
-            return '';
-        }
-        $finalpath = $mergedpath . '.pdf';
-        @rename($mergedpath, $finalpath);
-        $pdf->Output($finalpath, 'F');
-
-        $optimizedpath = self::optimize_pdf_file_with_ghostscript($finalpath, $outputfilename);
-        if ($optimizedpath !== '' && is_file($optimizedpath) && $optimizedpath !== $finalpath) {
-            @unlink($finalpath);
-            $finalpath = $optimizedpath;
-        }
-
-        return is_file($finalpath) ? $finalpath : '';
+        $pdf->Output($outputpath, 'F');
+        return $outputpath;
     }
 
     /**
-     * Create temp PDF files from binary PDF contents.
-     *
-     * @param array $pdfcontents
-     * @param string $tempdirectory
-     * @return array
-     */
-    private static function create_temp_pdf_files_from_contents(array $pdfcontents,
-            string $tempdirectory = 'spotaward_merge_pdf_sources'): array {
-        $pdfcontents = array_values(array_filter($pdfcontents, static function($content) {
-            return is_string($content) && $content !== '';
-        }));
-        if (empty($pdfcontents)) {
-            return [];
-        }
-
-        $tempdir = make_temp_directory($tempdirectory);
-        $tempfiles = [];
-        foreach ($pdfcontents as $index => $content) {
-            $temppath = self::write_pdf_temp_file((string)$content, $tempdir, 'spotawardpdf' . $index);
-            if ($temppath !== '') {
-                $tempfiles[] = $temppath;
-            }
-        }
-
-        return $tempfiles;
-    }
-
-    /**
-     * Create temp PDF files from stored files one at a time.
+     * Merge multiple stored files to a temporary file path.
      *
      * @param array $files
-     * @param string $tempdirectory
-     * @return array
+     * @param string $outputfilename
+     * @return string
      */
-    private static function create_temp_pdf_files_from_stored_files(array $files,
-            string $tempdirectory = 'spotaward_merge_pdf_sources'): array {
-        if (empty($files)) {
-            return [];
+    public static function merge_stored_pdf_files_to_temp_path(array $files, string $outputfilename = 'certificates.pdf'): string {
+        global $CFG;
+        $tempdir = make_temp_directory('spotaward_merge_temp');
+        $paths = [];
+        foreach ($files as $i => $file) {
+            $path = $tempdir . '/file_' . $i . '.pdf';
+            $file->copy_content_to($path);
+            $paths[] = $path;
         }
-
-        $tempdir = make_temp_directory($tempdirectory);
-        $tempfiles = [];
-        foreach ($files as $index => $file) {
-            if (!is_object($file) || !method_exists($file, 'copy_content_to')) {
-                continue;
-            }
-
-            $temppath = tempnam($tempdir, 'spotawardstored' . $index);
-            if ($temppath === false) {
-                continue;
-            }
-
-            $pdfpath = $temppath . '.pdf';
-            @rename($temppath, $pdfpath);
-
-            try {
-                $file->copy_content_to($pdfpath);
-                if (is_file($pdfpath) && filesize($pdfpath) > 0) {
-                    $tempfiles[] = $pdfpath;
-                } else {
-                    @unlink($pdfpath);
+        try {
+            return self::merge_pdf_files_to_temp_path($paths, $outputfilename);
+        } finally {
+            foreach ($paths as $path) {
+                if (is_file($path)) {
+                    @unlink($path);
                 }
-            } catch (\Exception $e) {
-                @unlink($pdfpath);
             }
         }
-
-        return $tempfiles;
-    }
-
-    /**
-     * Write one PDF body to a temp file and return the path.
-     *
-     * @param string $content
-     * @param string $tempdir
-     * @param string $prefix
-     * @return string
-     */
-    private static function write_pdf_temp_file(string $content, string $tempdir, string $prefix): string {
-        $temppath = tempnam($tempdir, $prefix);
-        if ($temppath === false) {
-            return '';
-        }
-
-        $pdfpath = $temppath . '.pdf';
-        @rename($temppath, $pdfpath);
-        if (file_put_contents($pdfpath, $content) === false) {
-            if (is_file($pdfpath)) {
-                @unlink($pdfpath);
-            }
-            return '';
-        }
-
-        return $pdfpath;
-    }
-
-    /**
-     * Remove temp files created during PDF processing.
-     *
-     * @param array $paths
-     * @return void
-     */
-    private static function cleanup_temp_files(array $paths): void {
-        foreach ($paths as $path) {
-            if (is_string($path) && $path !== '' && is_file($path)) {
-                @unlink($path);
-            }
-        }
-    }
-
-
-
-    /**
-     * Locate a Ghostscript binary if available on the host.
-     *
-     * @return string
-     */
-    private static function find_ghostscript_binary(): string {
-        $candidates = [
-            'gswin64c',
-            'gswin32c',
-            'gs',
-            'C:\\Program Files\\gs\\gs10.05.1\\bin\\gswin64c.exe',
-            'C:\\Program Files\\gs\\gs10.04.0\\bin\\gswin64c.exe',
-            'C:\\Program Files\\gs\\gs10.03.1\\bin\\gswin64c.exe',
-            'C:\\Program Files\\gs\\gs10.03.0\\bin\\gswin64c.exe',
-            'C:\\Program Files\\gs\\gs10.02.1\\bin\\gswin64c.exe',
-            'C:\\Program Files\\gs\\gs10.02.0\\bin\\gswin64c.exe',
-        ];
-
-        foreach ($candidates as $candidate) {
-            if (preg_match('/^[A-Za-z]:\\\\/', $candidate) && is_file($candidate)) {
-                return $candidate;
-            }
-
-            $resolved = self::resolve_command_path($candidate);
-            if ($resolved !== '') {
-                return $resolved;
-            }
-        }
-
-        return '';
-    }
-
-    /**
-     * Resolve a command name to an executable path.
-     *
-     * @param string $command
-     * @return string
-     */
-    private static function resolve_command_path(string $command): string {
-        if (!function_exists('exec')) {
-            return '';
-        }
-
-        $checker = strtoupper(substr(PHP_OS, 0, 3)) === 'WIN' ? 'where' : 'command -v';
-        $output = [];
-        $exitcode = 1;
-        @exec($checker . ' ' . escapeshellarg($command), $output, $exitcode);
-        if ($exitcode !== 0 || empty($output[0])) {
-            return '';
-        }
-
-        return trim((string)$output[0]);
-    }
-
-    /**
-     * Execute a PDF optimization shell command.
-     *
-     * @param string $cmd
-     * @return int
-     */
-    private static function run_pdf_optimization_command(string $cmd): int {
-        if (function_exists('exec')) {
-            $output = [];
-            $exitcode = 1;
-            @exec($cmd, $output, $exitcode);
-            return (int)$exitcode;
-        }
-
-        if (function_exists('shell_exec')) {
-            @shell_exec($cmd);
-            return 0;
-        }
-
-        return 1;
     }
 
     /**
@@ -4174,19 +3765,322 @@ final class api {
      * @param stdClass $item
      * @return string
      */
-    public static function generate_certificate_using_bc(stdClass $model, stdClass $user, stdClass $course,
-            stdClass $nomination, stdClass $item, string $compressionprofile = 'default'): string {
+    public static function generate_certificate_using_bc(stdClass $model, stdClass $user, stdClass $course, 
+                                                          stdClass $nomination, stdClass $item): string {
+        global $CFG, $SITE;
+
+        require_once(__DIR__ . '/../../../../mod/certificatebeautiful/classes/pdf/vendor/autoload.php');
+        require_once(__DIR__ . '/../../../../mod/certificatebeautiful/classes/fonts/font_util.php');
+
+        $proporcao = .85;
+        $orientation = isset($model->orientation) ? $model->orientation : 'L';
+
         $nominator = core_user::get_user($nomination->nominatorid);
         $programmanager = core_user::get_user($nomination->programmanagerid);
-        $replacements = cert_field_map::get_replacement_fields($course, $user, $nomination, $item, $nominator, $programmanager);
 
-        return self::generate_document_using_bc(
-            $model,
-            $replacements,
-            'Spot Award Certificate',
-            'Spot Award Certificate',
-            $compressionprofile
-        );
+        $mpdf = new \Mpdf\Mpdf(self::get_certificate_mpdf_config([210 * $proporcao, 297 * $proporcao], $orientation));
+        $mpdf->autoPageBreak = false;
+        $mpdf->SetCompression(true);
+        $mpdf->useSubstitutions = false;
+        $mpdf->simpleTables = true;
+
+        $mpdf->SetAuthor($course->fullname);
+        $mpdf->SetCreator('Spot Award Certificate');
+        $mpdf->SetTitle('Spot Award Certificate');
+
+        foreach ($model->pages_info_object as $page) {
+            $mpdf->AddPageByArray([]);
+
+            $htmldata = $page->htmldata ?? '';
+            $cssdata = $page->cssdata ?? '';
+
+            // IMPORTANT: Decode HTML entities first - Beautiful Certificate may store them encoded
+            $htmldata = html_entity_decode($htmldata, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+            $cssdata = html_entity_decode($cssdata, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+
+            $htmldata = str_replace("-&gt;", "->", $htmldata);
+            $htmldata = str_replace('{\$', '{$', $htmldata);
+            $cssdata = str_replace("-&gt;", "->", $cssdata);
+            $cssdata = str_replace('{\$', '{$', $cssdata);
+
+            // Extract any inline <style> blocks from htmldata and append to cssdata
+            if (preg_match_all('/<style[^>]*>(.*?)<\/style>/is', $htmldata, $stylematches)) {
+                foreach ($stylematches[1] as $stylecontent) {
+                    $cssdata .= "\n" . $stylecontent;
+                }
+                $htmldata = preg_replace('/<style[^>]*>.*?<\/style>/is', '', $htmldata);
+            }
+
+            // Match Beautiful Certificate's own PDF renderer behavior.
+            $htmldata = str_replace("<section", "<body", $htmldata);
+            $htmldata = str_replace("</section>", "</body>", $htmldata);
+
+            // Get all Spot Award replacement fields (generates all placeholder variations)
+            $replacements = cert_field_map::get_replacement_fields($course, $user, $nomination, $item, $nominator, $programmanager);
+
+            // Add Beautiful Certificate system fields - use UPPERCASE (case sensitive!)
+            $replacements['{$CERTIFICATE->description}'] = $model->description ?? '';
+            $replacements['{$CERTIFICATE->name}'] = $model->name ?? '';
+            $replacements['{$CERTIFICATE->id}'] = $model->id ?? '';
+            
+            // Also add lowercase versions in case template uses them
+            $replacements['{$certificate->description}'] = $model->description ?? '';
+            $replacements['{$certificate->name}'] = $model->name ?? '';
+            $replacements['{$certificate->id}'] = $model->id ?? '';
+
+            // Site information - all variations
+            $sitename = format_string($SITE->fullname ?? '');
+            $siteshortname = format_string($SITE->shortname ?? '');
+            $replacements['{$SITE->fullname}'] = $sitename;
+            $replacements['{$site->fullname}'] = $sitename;
+            $replacements['{$SITE->shortname}'] = $siteshortname;
+            $replacements['{$site->shortname}'] = $siteshortname;
+            $replacements['{$SITE->summary}'] = $SITE->summary ?? '';
+            $replacements['{$site->summary}'] = $SITE->summary ?? '';
+            $replacements['{site->fullname}'] = $sitename;
+            $replacements['{site->shortname}'] = $siteshortname;
+
+            // Apply all field replacements to HTML
+            foreach ($replacements as $placeholder => $value) {
+                if (!empty($value) || $value === '0') {  // Allow '0' as valid value
+                    $wrappedvalue = self::is_plain_text_certificate_placeholder($placeholder)
+                        ? self::wrap_certificate_plaintext_value((string)$value)
+                        : self::wrap_certificate_replacement_value((string)$value);
+                    $htmldata = str_replace($placeholder, $wrappedvalue, $htmldata);
+                }
+            }
+
+            // Apply field replacements to CSS
+            if (!empty($cssdata)) {
+                foreach ($replacements as $placeholder => $value) {
+                    if (!empty($value) || $value === '0') {  // Allow '0' as valid value
+                        $cssdata = str_replace($placeholder, (string)$value, $cssdata);
+                    }
+                }
+            }
+
+            // Process CSS for mPDF-compatible image URLs BEFORE language string processing
+            // This includes expanding background shorthand and resolving URLs
+            $cssdata = self::process_certificate_css($cssdata);
+
+            // Process Beautiful Certificate language strings {#s}key{/s}
+            // This must happen AFTER field replacements to avoid interfering with them
+            $htmldata = self::process_language_strings($htmldata);
+            if (!empty($cssdata)) {
+                $cssdata = self::process_language_strings($cssdata);
+            }
+
+            // Process date functions {{userdate(...)}}
+            $htmldata = self::process_date_functions($htmldata);
+            if (!empty($cssdata)) {
+                $cssdata = self::process_date_functions($cssdata);
+            }
+
+            // Clean up HTML
+            $htmldata = self::process_certificate_html($htmldata);
+            $cssdata = self::process_certificate_html($cssdata);
+            
+            // Process inline background-image styles in HTML elements
+            $htmldata = self::process_inline_background_images($htmldata);
+
+            $extracss = "
+                @page {
+                    page-break-inside: avoid;
+                }
+                html,
+                body,
+                img {
+                    margin: 0;
+                    padding: 0;
+                }";
+
+            // Combine CSS properly
+            $fullcss = $extracss;
+            if (!empty($cssdata)) {
+                $fullcss .= "\n" . $cssdata;
+            }
+
+            if (empty($htmldata)) {
+                continue;
+            }
+
+            self::apply_certificate_background($htmldata, $cssdata, $mpdf);
+
+            if (!empty($cssdata)) {
+                $mpdf->WriteHTML($fullcss, \Mpdf\HTMLParserMode::HEADER_CSS);
+                $mpdf->WriteHTML($htmldata);
+            } else {
+                $mpdf->WriteHTML("<style>{$extracss}</style>\n{$htmldata}");
+            }
+        }
+
+        return $mpdf->Output('certificate.pdf', \Mpdf\Output\Destination::STRING_RETURN);
+    }
+
+    /**
+     * Generate an ultra-compressed merged PDF for multiple nominations/items.
+     * Reuses background image XObjects and font subsets across all pages for maximum compression.
+     *
+     * @param array $nominationids
+     * @param array|null $specificitemids
+     * @return string
+     */
+    public static function generate_merged_nominations_certificates_pdf(array $nominationids, ?array $specificitemids = null): string {
+        global $CFG, $SITE;
+
+        require_once(__DIR__ . '/../../../../mod/certificatebeautiful/classes/pdf/vendor/autoload.php');
+        require_once(__DIR__ . '/../../../../mod/certificatebeautiful/classes/fonts/font_util.php');
+
+        $templateid = (int)get_config('local_spotaward', 'certificate_templateid');
+        $model = self::get_beautiful_certificate_model($templateid);
+
+        $proporcao = .85;
+        $orientation = isset($model->orientation) ? $model->orientation : 'L';
+
+        $mpdf = new \Mpdf\Mpdf(self::get_certificate_mpdf_config([210 * $proporcao, 297 * $proporcao], $orientation));
+        $mpdf->autoPageBreak = false;
+        $mpdf->useSubstitutions = false;
+        $mpdf->simpleTables = true;
+
+        $mpdf->SetAuthor(format_string($SITE->fullname ?? 'Spot Award'));
+        $mpdf->SetCreator('Spot Award Certificates');
+        $mpdf->SetTitle('Spot Award Certificates');
+
+        $pageadded = false;
+
+        foreach ($nominationids as $nominationid) {
+            $nomination = self::get_nomination($nominationid);
+            $course = get_course($nomination->courseid);
+            $nominator = core_user::get_user($nomination->nominatorid);
+            $programmanager = core_user::get_user($nomination->programmanagerid);
+            $items = self::get_nomination_items($nominationid);
+
+            foreach ($items as $item) {
+                if ($specificitemids !== null && !in_array((int)$item->id, $specificitemids, true)) {
+                    continue;
+                }
+                if (!in_array($item->status, ['ssteamprogress', 'closed'], true)) {
+                    continue;
+                }
+
+                $user = core_user::get_user($item->studentid);
+                if (!$user) {
+                    continue;
+                }
+
+                foreach ($model->pages_info_object as $page) {
+                    $mpdf->AddPageByArray([]);
+                    $pageadded = true;
+
+                    $htmldata = $page->htmldata ?? '';
+                    $cssdata = $page->cssdata ?? '';
+
+                    $htmldata = html_entity_decode($htmldata, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+                    $cssdata = html_entity_decode($cssdata, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+
+                    $htmldata = str_replace("-&gt;", "->", $htmldata);
+                    $htmldata = str_replace('{\$', '{$', $htmldata);
+                    $cssdata = str_replace("-&gt;", "->", $cssdata);
+                    $cssdata = str_replace('{\$', '{$', $cssdata);
+
+                    if (preg_match_all('/<style[^>]*>(.*?)<\/style>/is', $htmldata, $stylematches)) {
+                        foreach ($stylematches[1] as $stylecontent) {
+                            $cssdata .= "\n" . $stylecontent;
+                        }
+                        $htmldata = preg_replace('/<style[^>]*>.*?<\/style>/is', '', $htmldata);
+                    }
+
+                    $htmldata = str_replace("<section", "<body", $htmldata);
+                    $htmldata = str_replace("</section>", "</body>", $htmldata);
+
+                    $replacements = cert_field_map::get_replacement_fields($course, $user, $nomination, $item, $nominator, $programmanager);
+                    $replacements['{$CERTIFICATE->description}'] = $model->description ?? '';
+                    $replacements['{$CERTIFICATE->name}'] = $model->name ?? '';
+                    $replacements['{$CERTIFICATE->id}'] = $model->id ?? '';
+                    $replacements['{$certificate->description}'] = $model->description ?? '';
+                    $replacements['{$certificate->name}'] = $model->name ?? '';
+                    $replacements['{$certificate->id}'] = $model->id ?? '';
+
+                    $sitename = format_string($SITE->fullname ?? '');
+                    $siteshortname = format_string($SITE->shortname ?? '');
+                    $replacements['{$SITE->fullname}'] = $sitename;
+                    $replacements['{$site->fullname}'] = $sitename;
+                    $replacements['{$SITE->shortname}'] = $siteshortname;
+                    $replacements['{$site->shortname}'] = $siteshortname;
+                    $replacements['{$SITE->summary}'] = $SITE->summary ?? '';
+                    $replacements['{$site->summary}'] = $SITE->summary ?? '';
+                    $replacements['{site->fullname}'] = $sitename;
+                    $replacements['{site->shortname}'] = $siteshortname;
+
+                    foreach ($replacements as $placeholder => $value) {
+                        if (!empty($value) || $value === '0') {
+                            $wrappedvalue = self::is_plain_text_certificate_placeholder($placeholder)
+                                ? self::wrap_certificate_plaintext_value((string)$value)
+                                : self::wrap_certificate_replacement_value((string)$value);
+                            $htmldata = str_replace($placeholder, $wrappedvalue, $htmldata);
+                        }
+                    }
+
+                    if (!empty($cssdata)) {
+                        foreach ($replacements as $placeholder => $value) {
+                            if (!empty($value) || $value === '0') {
+                                $cssdata = str_replace($placeholder, (string)$value, $cssdata);
+                            }
+                        }
+                    }
+
+                    $cssdata = self::process_certificate_css($cssdata);
+                    $htmldata = self::process_language_strings($htmldata);
+                    if (!empty($cssdata)) {
+                        $cssdata = self::process_language_strings($cssdata);
+                    }
+
+                    $htmldata = self::process_date_functions($htmldata);
+                    if (!empty($cssdata)) {
+                        $cssdata = self::process_date_functions($cssdata);
+                    }
+
+                    $htmldata = self::process_certificate_html($htmldata);
+                    $cssdata = self::process_certificate_html($cssdata);
+                    $htmldata = self::process_inline_background_images($htmldata);
+
+                    $extracss = "
+                        @page {
+                            page-break-inside: avoid;
+                        }
+                        html,
+                        body,
+                        img {
+                            margin: 0;
+                            padding: 0;
+                        }";
+
+                    $fullcss = $extracss;
+                    if (!empty($cssdata)) {
+                        $fullcss .= "\n" . $cssdata;
+                    }
+
+                    if (empty($htmldata)) {
+                        continue;
+                    }
+
+                    self::apply_certificate_background($htmldata, $cssdata, $mpdf);
+
+                    if (!empty($cssdata)) {
+                        $mpdf->WriteHTML($fullcss, \Mpdf\HTMLParserMode::HEADER_CSS);
+                        $mpdf->WriteHTML($htmldata);
+                    } else {
+                        $mpdf->WriteHTML("<style>{$extracss}</style>\n{$htmldata}");
+                    }
+                }
+            }
+        }
+
+        if (!$pageadded) {
+            throw new moodle_exception('nocertificates', 'local_spotaward');
+        }
+
+        return $mpdf->Output('certificates.pdf', \Mpdf\Output\Destination::STRING_RETURN);
     }
 
     /**
@@ -4219,6 +4113,8 @@ final class api {
      * @return string
      */
     public static function generate_pr_document_pdf(int $nominationid): string {
+        global $CFG, $SITE;
+
         $nomination = self::get_nomination($nominationid);
         if ($nomination->status !== 'ssteamprogress') {
             throw new moodle_exception('prdocumentnotavailable', 'local_spotaward');
@@ -4244,125 +4140,89 @@ final class api {
             $awardsummary
         );
 
-        return self::generate_document_using_bc(
-            $model,
-            $replacements,
-            'Spot Award PR Document',
-            'Purchase Request'
-        );
-    }
-
-    /**
-     * Render a Beautiful Certificate template with custom replacements.
-     *
-     * @param stdClass $model
-     * @param array $replacements
-     * @param string $creator
-     * @param string $title
-     * @return string
-     */
-    private static function generate_document_using_bc(stdClass $model, array $replacements, string $creator,
-            string $title, string $compressionprofile = 'default'): string {
-        global $CFG;
-
         require_once(__DIR__ . '/../../../../mod/certificatebeautiful/classes/pdf/vendor/autoload.php');
         require_once(__DIR__ . '/../../../../mod/certificatebeautiful/classes/fonts/font_util.php');
 
         $proporcao = .85;
         $orientation = isset($model->orientation) ? $model->orientation : 'L';
 
-        $previousprofile = self::$certificatecompressionprofile;
-        self::$certificatecompressionprofile = $compressionprofile;
-
-        $mpdf = new \Mpdf\Mpdf(self::get_certificate_mpdf_config(
-            [210 * $proporcao, 297 * $proporcao],
-            $orientation,
-            $compressionprofile
-        ));
+        $mpdf = new \Mpdf\Mpdf(self::get_certificate_mpdf_config([210 * $proporcao, 297 * $proporcao], $orientation));
         $mpdf->autoPageBreak = false;
-        $mpdf->SetCompression(true);
+        $mpdf->SetAuthor('Spot Award PR Document');
+        $mpdf->SetCreator('Purchase Request');
+        $mpdf->SetTitle('Purchase Request');
 
-        $mpdf->SetAuthor($title);
-        $mpdf->SetCreator($creator);
-        $mpdf->SetTitle($title);
+        foreach ($model->pages_info_object as $page) {
+            $mpdf->AddPageByArray([]);
 
-        try {
-            foreach ($model->pages_info_object as $page) {
-                $mpdf->AddPageByArray([]);
+            $htmldata = $page->htmldata ?? '';
+            $cssdata = $page->cssdata ?? '';
 
-                $htmldata = $page->htmldata ?? '';
-                $cssdata = $page->cssdata ?? '';
+            $htmldata = html_entity_decode($htmldata, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+            $cssdata = html_entity_decode($cssdata, ENT_QUOTES | ENT_HTML5, 'UTF-8');
 
-            // IMPORTANT: Decode HTML entities first - Beautiful Certificate may store them encoded
-                $htmldata = html_entity_decode($htmldata, ENT_QUOTES | ENT_HTML5, 'UTF-8');
-                $cssdata = html_entity_decode($cssdata, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+            $htmldata = str_replace("-&gt;", "->", $htmldata);
+            $htmldata = str_replace('{\$', '{$', $htmldata);
+            $cssdata = str_replace("-&gt;", "->", $cssdata);
+            $cssdata = str_replace('{\$', '{$', $cssdata);
 
-            // Extract any inline <style> blocks from htmldata and append to cssdata
-                if (preg_match_all('/<style[^>]*>(.*?)<\/style>/is', $htmldata, $stylematches)) {
-                    foreach ($stylematches[1] as $stylecontent) {
-                        $cssdata .= "\n" . $stylecontent;
-                    }
-                    $htmldata = preg_replace('/<style[^>]*>.*?<\/style>/is', '', $htmldata);
+            if (preg_match_all('/<style[^>]*>(.*?)<\/style>/is', $htmldata, $stylematches)) {
+                foreach ($stylematches[1] as $stylecontent) {
+                    $cssdata .= "\n" . $stylecontent;
                 }
+                $htmldata = preg_replace('/<style[^>]*>.*?<\/style>/is', '', $htmldata);
+            }
 
-            // Match Beautiful Certificate's own PDF renderer behavior.
-                $htmldata = str_replace("<section", "<body", $htmldata);
-                $htmldata = str_replace("</section>", "</body>", $htmldata);
+            $htmldata = str_replace("<section", "<body", $htmldata);
+            $htmldata = str_replace("</section>", "</body>", $htmldata);
 
-            // Add Beautiful Certificate system fields - use UPPERCASE (case sensitive!)
-                $replacements['{$CERTIFICATE->description}'] = $model->description ?? '';
-                $replacements['{$CERTIFICATE->name}'] = $model->name ?? '';
-                $replacements['{$CERTIFICATE->id}'] = $model->id ?? '';
-            
-            // Also add lowercase versions in case template uses them
-                $replacements['{$certificate->description}'] = $model->description ?? '';
-                $replacements['{$certificate->name}'] = $model->name ?? '';
-                $replacements['{$certificate->id}'] = $model->id ?? '';
+            $replacements['{$CERTIFICATE->description}'] = $model->description ?? '';
+            $replacements['{$CERTIFICATE->name}'] = $model->name ?? '';
+            $replacements['{$CERTIFICATE->id}'] = $model->id ?? '';
+            $replacements['{$certificate->description}'] = $model->description ?? '';
+            $replacements['{$certificate->name}'] = $model->name ?? '';
+            $replacements['{$certificate->id}'] = $model->id ?? '';
 
-            // Apply all field replacements to HTML
+            $sitename = format_string($SITE->fullname ?? '');
+            $siteshortname = format_string($SITE->shortname ?? '');
+            $replacements['{$SITE->fullname}'] = $sitename;
+            $replacements['{$site->fullname}'] = $sitename;
+            $replacements['{$SITE->shortname}'] = $siteshortname;
+            $replacements['{$site->shortname}'] = $siteshortname;
+
+            foreach ($replacements as $placeholder => $value) {
+                if (!empty($value) || $value === '0') {
+                    $wrappedvalue = self::is_plain_text_certificate_placeholder($placeholder)
+                        ? self::wrap_certificate_plaintext_value((string)$value)
+                        : self::wrap_certificate_replacement_value((string)$value);
+                    $htmldata = str_replace($placeholder, $wrappedvalue, $htmldata);
+                }
+            }
+
+            if (!empty($cssdata)) {
                 foreach ($replacements as $placeholder => $value) {
                     if (!empty($value) || $value === '0') {
-                        $wrappedvalue = self::is_plain_text_certificate_placeholder($placeholder)
-                            ? self::wrap_certificate_plaintext_value((string)$value)
-                            : self::wrap_certificate_replacement_value((string)$value);
-                        $htmldata = str_replace($placeholder, $wrappedvalue, $htmldata);
+                        $cssdata = str_replace($placeholder, (string)$value, $cssdata);
                     }
                 }
+            }
 
-            // Apply field replacements to CSS
-                if (!empty($cssdata)) {
-                    foreach ($replacements as $placeholder => $value) {
-                        if (!empty($value) || $value === '0') {
-                            $cssdata = str_replace($placeholder, (string)$value, $cssdata);
-                        }
-                    }
-                }
+            $cssdata = self::process_certificate_css($cssdata);
+            $htmldata = self::process_language_strings($htmldata);
+            if (!empty($cssdata)) {
+                $cssdata = self::process_language_strings($cssdata);
+            }
 
-            // Process CSS for mPDF-compatible image URLs BEFORE language string processing
-            // This includes expanding background shorthand and resolving URLs
-                $cssdata = self::process_certificate_css($cssdata);
+            $htmldata = self::process_date_functions($htmldata);
+            if (!empty($cssdata)) {
+                $cssdata = self::process_date_functions($cssdata);
+            }
 
-            // Process Beautiful Certificate language strings {#s}key{/s}
-            // This must happen AFTER field replacements to avoid interfering with them
-                $htmldata = self::process_language_strings($htmldata);
-                if (!empty($cssdata)) {
-                    $cssdata = self::process_language_strings($cssdata);
-                }
+            $htmldata = self::process_certificate_html($htmldata);
+            $cssdata = self::process_certificate_html($cssdata);
+            $htmldata = self::process_inline_background_images($htmldata);
 
-            // Process date functions {{userdate(...)}}
-                $htmldata = self::process_date_functions($htmldata);
-                if (!empty($cssdata)) {
-                    $cssdata = self::process_date_functions($cssdata);
-                }
-
-            // Clean up HTML
-                $htmldata = self::process_certificate_html($htmldata);
-                $cssdata = self::process_certificate_html($cssdata);
-            
-            // Process inline background-image styles in HTML elements
-                $htmldata = self::process_inline_background_images($htmldata);
-
-                $extracss = "
+            $extracss = "
                 @page {
                     page-break-inside: avoid;
                 }
@@ -4373,30 +4233,26 @@ final class api {
                     padding: 0;
                 }";
 
-            // Combine CSS properly
-                $fullcss = $extracss;
-                if (!empty($cssdata)) {
-                    $fullcss .= "\n" . $cssdata;
-                }
-
-                if (empty($htmldata)) {
-                    continue;
-                }
-
-                self::apply_certificate_background($htmldata, $cssdata, $mpdf);
-
-                if (!empty($cssdata)) {
-                    $mpdf->WriteHTML($fullcss, \Mpdf\HTMLParserMode::HEADER_CSS);
-                    $mpdf->WriteHTML($htmldata);
-                } else {
-                    $mpdf->WriteHTML("<style>{$extracss}</style>\n{$htmldata}");
-                }
+            $fullcss = $extracss;
+            if (!empty($cssdata)) {
+                $fullcss .= "\n" . $cssdata;
             }
-        } finally {
-            self::$certificatecompressionprofile = $previousprofile;
+
+            if (empty($htmldata)) {
+                continue;
+            }
+
+            self::apply_certificate_background($htmldata, $cssdata, $mpdf);
+
+            if (!empty($cssdata)) {
+                $mpdf->WriteHTML($fullcss, \Mpdf\HTMLParserMode::HEADER_CSS);
+                $mpdf->WriteHTML($htmldata);
+            } else {
+                $mpdf->WriteHTML("<style>{$extracss}</style>\n{$htmldata}");
+            }
         }
 
-        return $mpdf->Output('certificate.pdf', \Mpdf\Output\Destination::STRING_RETURN);
+        return $mpdf->Output('pr_document.pdf', \Mpdf\Output\Destination::STRING_RETURN);
     }
 
     /**
@@ -4406,8 +4262,7 @@ final class api {
      * @param string $orientation
      * @return array
      */
-    private static function get_certificate_mpdf_config($format, string $orientation = 'L',
-            string $compressionprofile = 'default'): array {
+    private static function get_certificate_mpdf_config($format, string $orientation = 'L'): array {
         global $CFG;
 
         $fontdirs = (new \Mpdf\Config\ConfigVariables())->getDefaults()['fontDir'];
@@ -4449,16 +4304,11 @@ final class api {
             $defaultfont = 'arial';
         }
 
-        $imagesettings = self::get_certificate_image_optimization_settings($compressionprofile);
-
         return [
             'mode' => 'utf-8',
             'format' => $format,
             'orientation' => $orientation,
             'tempDir' => "{$CFG->dataroot}/temp/mpdf",
-            'dpi' => $imagesettings['dpi'],
-            'img_dpi' => $imagesettings['imgdpi'],
-            'jpeg_quality' => $imagesettings['pdfjpegquality'],
             'margin_left' => 0,
             'margin_right' => 0,
             'margin_top' => 0,
@@ -4468,6 +4318,9 @@ final class api {
             'fontDir' => array_values(array_unique($fontdirs)),
             'fontdata' => $fontdata,
             'default_font' => $defaultfont,
+            'compress' => true,
+            'dpi' => 96,
+            'img_dpi' => 96,
         ];
     }
 
@@ -4568,8 +4421,9 @@ final class api {
      */
     public static function save_certificate_file(int $nominationid, int $nominationitemid, int $userid, string $pdfcontent): void {
         $fs = get_file_storage();
+        $contextid = self::get_certificate_contextid($nominationid);
         $existingfile = $fs->get_file(
-            context_system::instance()->id,
+            $contextid,
             'local_spotaward',
             'certificates',
             $nominationid,
@@ -4580,7 +4434,7 @@ final class api {
             $existingfile->delete();
         }
         $legacyfile = $fs->get_file(
-            context_system::instance()->id,
+            $contextid,
             'local_spotaward',
             'certificates',
             $nominationid,
@@ -4592,7 +4446,7 @@ final class api {
         }
 
         $filerecord = [
-            'contextid' => context_system::instance()->id,
+            'contextid' => $contextid,
             'component' => 'local_spotaward',
             'filearea' => 'certificates',
             'itemid' => $nominationid,
@@ -4603,6 +4457,7 @@ final class api {
         ];
 
         $fs->create_file_from_string($filerecord, $pdfcontent);
+        unset(self::$certificatefilecache[$nominationid]);
     }
 
     /**
@@ -4627,6 +4482,20 @@ final class api {
     }
 
     /**
+     * Return the owning course context for nomination certificate files.
+     *
+     * Course-context storage allows Moodle backup, restore, and course deletion
+     * to manage these personal-data files with the records they belong to.
+     *
+     * @param int $nominationid
+     * @return int
+     */
+    private static function get_certificate_contextid(int $nominationid): int {
+        $nomination = self::get_nomination($nominationid);
+        return context_course::instance((int)$nomination->courseid)->id;
+    }
+
+    /**
      * Delete all stored certificate files for a nomination.
      *
      * @param int $nominationid
@@ -4635,7 +4504,7 @@ final class api {
     private static function delete_nomination_certificate_files(int $nominationid): void {
         $fs = get_file_storage();
         $files = $fs->get_area_files(
-            context_system::instance()->id,
+            self::get_certificate_contextid($nominationid),
             'local_spotaward',
             'certificates',
             $nominationid,
@@ -4646,6 +4515,58 @@ final class api {
         foreach ($files as $file) {
             $file->delete();
         }
+        unset(self::$certificatefilecache[$nominationid]);
+    }
+
+    /**
+     * Check if a certificate file exists for a student item.
+     *
+     * This uses a request-level cache to pre-load all certificate files for the nomination
+     * to avoid executing N+1 database queries.
+     *
+     * @param int $nominationid
+     * @param int $userid
+     * @param int $nominationitemid
+     * @return bool
+     */
+    public static function has_certificate_file(int $nominationid, int $userid, int $nominationitemid = 0): bool {
+        if (!isset(self::$certificatefilecache[$nominationid])) {
+            self::$certificatefilecache[$nominationid] = [];
+            $fs = get_file_storage();
+            $files = $fs->get_area_files(
+                self::get_certificate_contextid($nominationid),
+                'local_spotaward',
+                'certificates',
+                $nominationid,
+                'id',
+                false
+            );
+            foreach ($files as $file) {
+                self::$certificatefilecache[$nominationid][$file->get_filename()] = true;
+            }
+        }
+
+        if ($nominationitemid > 0) {
+            $filename = self::get_certificate_filename($nominationitemid, $userid);
+            if (isset(self::$certificatefilecache[$nominationid][$filename])) {
+                return true;
+            }
+        }
+
+        $items = self::get_nomination_items($nominationid);
+        foreach ($items as $item) {
+            if ((int)$item->studentid !== $userid) {
+                continue;
+            }
+
+            $filename = self::get_certificate_filename((int)$item->id, $userid);
+            if (isset(self::$certificatefilecache[$nominationid][$filename])) {
+                return true;
+            }
+        }
+
+        $legacyfilename = self::get_legacy_certificate_filename($userid);
+        return isset(self::$certificatefilecache[$nominationid][$legacyfilename]);
     }
 
     /**
@@ -4658,9 +4579,10 @@ final class api {
      */
     public static function get_certificate_file(int $nominationid, int $userid, int $nominationitemid = 0): ?\stored_file {
         $fs = get_file_storage();
+        $contextid = self::get_certificate_contextid($nominationid);
         if ($nominationitemid > 0) {
             $file = $fs->get_file(
-                context_system::instance()->id,
+                $contextid,
                 'local_spotaward',
                 'certificates',
                 $nominationid,
@@ -4679,7 +4601,7 @@ final class api {
             }
 
             $file = $fs->get_file(
-                context_system::instance()->id,
+                $contextid,
                 'local_spotaward',
                 'certificates',
                 $nominationid,
@@ -4692,7 +4614,7 @@ final class api {
         }
 
         $file = $fs->get_file(
-            context_system::instance()->id,
+            $contextid,
             'local_spotaward',
             'certificates',
             $nominationid,
@@ -4711,7 +4633,7 @@ final class api {
     public static function certificates_exist(int $nominationid): bool {
         $fs = get_file_storage();
         $files = $fs->get_area_files(
-            context_system::instance()->id,
+            self::get_certificate_contextid($nominationid),
             'local_spotaward',
             'certificates',
             $nominationid,
@@ -4730,7 +4652,7 @@ final class api {
     public static function get_all_certificate_files(int $nominationid): array {
         $fs = get_file_storage();
         return $fs->get_area_files(
-            context_system::instance()->id,
+            self::get_certificate_contextid($nominationid),
             'local_spotaward',
             'certificates',
             $nominationid,
@@ -4766,153 +4688,7 @@ final class api {
     }
 
     /**
-     * Build all certificates as one merged PDF in temp storage.
-     *
-     * @param int $nominationid
-     * @return array
-     */
-    private static function build_combined_certificate_pdf_attachment(int $nominationid): array {
-        global $CFG;
-
-        self::ensure_nomination_certificates_generated($nominationid);
-        $basename = self::get_certificate_zip_basename($nominationid);
-        $files = self::get_all_certificate_files($nominationid);
-
-        if (empty($files)) {
-            throw new moodle_exception('nocertificates', 'local_spotaward');
-        }
-
-        $mergedpdfpath = self::merge_stored_pdf_files_to_temp_path($files, $basename . '_certificates.pdf');
-        if ($mergedpdfpath === '' || !is_file($mergedpdfpath)) {
-            throw new moodle_exception('nocertificates', 'local_spotaward');
-        }
-
-        if ((filesize($mergedpdfpath) ?: 0) > self::ADMIN_SHARE_MAX_BYTES) {
-            $compactpdffiles = self::generate_nomination_certificate_pdf_temp_files($nominationid, 'adminshare');
-            if (!empty($compactpdffiles)) {
-                try {
-                    $compactmergedpdfpath = self::merge_pdf_files_to_temp_path($compactpdffiles, $basename . '_certificates.pdf');
-                    if ($compactmergedpdfpath !== '' && is_file($compactmergedpdfpath)) {
-                        $compactsize = filesize($compactmergedpdfpath) ?: PHP_INT_MAX;
-                        $mergedsize = filesize($mergedpdfpath) ?: PHP_INT_MAX;
-                        if ($compactsize < $mergedsize) {
-                            @unlink($mergedpdfpath);
-                            $mergedpdfpath = $compactmergedpdfpath;
-                            $compactmergedpdfpath = '';
-                        }
-                    }
-                    if (!empty($compactmergedpdfpath) && is_file($compactmergedpdfpath)) {
-                        @unlink($compactmergedpdfpath);
-                    }
-                } finally {
-                    self::cleanup_temp_files($compactpdffiles);
-                }
-            }
-        }
-
-        if ((filesize($mergedpdfpath) ?: 0) > self::ADMIN_SHARE_MAX_BYTES) {
-            @unlink($mergedpdfpath);
-            throw new moodle_exception('adminsharecertificatetoolarge', 'local_spotaward');
-        }
-
-        return [
-            'path' => $mergedpdfpath,
-            'name' => $basename . '_certificates.pdf',
-            'size' => filesize($mergedpdfpath) ?: 0,
-        ];
-    }
-
-    /**
-     * Generate nomination certificate PDFs as temp files with a specific compression profile.
-     *
-     * This is used for admin-share fallbacks so we can keep emailed bundles below
-     * the attachment threshold without replacing the normal stored certificates.
-     *
-     * @param int $nominationid
-     * @param string $compressionprofile
-     * @return array
-     */
-    private static function generate_nomination_certificate_pdf_temp_files(int $nominationid,
-            string $compressionprofile = 'default'): array {
-        $nomination = self::get_nomination($nominationid);
-        if (!in_array($nomination->status, ['ssteamprogress', 'closed'], true)) {
-            throw new moodle_exception('invalidparameter');
-        }
-
-        $templateid = (int)get_config('local_spotaward', 'certificate_templateid');
-        $model = self::get_beautiful_certificate_model($templateid);
-        $course = get_course($nomination->courseid);
-        $items = self::get_nomination_items($nominationid);
-        $tempdir = make_temp_directory('spotaward_compact_admin_certs');
-        $generated = [];
-
-        foreach ($items as $item) {
-            if (!in_array($item->status, ['ssteamprogress', 'closed'], true)) {
-                continue;
-            }
-
-            $student = core_user::get_user($item->studentid);
-            if (!$student) {
-                continue;
-            }
-
-            try {
-                $content = self::generate_certificate_using_bc(
-                    $model,
-                    $student,
-                    $course,
-                    $nomination,
-                    $item,
-                    $compressionprofile
-                );
-                if (!is_string($content) || $content === '') {
-                    continue;
-                }
-
-                $temppath = self::write_pdf_temp_file($content, $tempdir, 'spotawardcompact' . (int)$item->id);
-                if ($temppath !== '') {
-                    $generated[] = $temppath;
-                }
-            } catch (\Throwable $e) {
-                debugging('Certificate generation failed for compact admin share item ' .
-                    $item->id . ': ' . $e->getMessage(), DEBUG_DEVELOPER);
-            }
-        }
-
-        return $generated;
-    }
-
-    /**
-     * Get image optimization settings for the active certificate profile.
-     *
-     * @param string $compressionprofile
-     * @return array
-     */
-    private static function get_certificate_image_optimization_settings(string $compressionprofile = 'default'): array {
-        if ($compressionprofile === 'adminshare') {
-            return [
-                'quality' => 64,
-                'maxlongedge' => 1280,
-                'dpi' => 96,
-                'imgdpi' => 96,
-                'pdfjpegquality' => 42,
-            ];
-        }
-
-        return [
-            'quality' => 82,
-            'maxlongedge' => 1800,
-            'dpi' => 96,
-            'imgdpi' => 96,
-            'pdfjpegquality' => 60,
-        ];
-    }
-
-    /**
      * Build all certificates as a ZIP file in temp storage.
-     *
-     * Kept for manual "Download All Certificates" so user-facing downloads
-     * behave the same as before, even though admin sharing now uses one PDF.
      *
      * @param int $nominationid
      * @return array
@@ -4923,9 +4699,14 @@ final class api {
         self::ensure_nomination_certificates_generated($nominationid);
         $zipbasename = self::get_certificate_zip_basename($nominationid);
         $files = self::get_all_certificate_files($nominationid);
-
+        
         if (empty($files)) {
             throw new moodle_exception('nocertificates', 'local_spotaward');
+        }
+
+        $zipfiles = [];
+        foreach ($files as $file) {
+            $zipfiles[$file->get_filename()] = [$file->get_content()];
         }
 
         require_once(__DIR__ . '/../../../../lib/filestorage/zip_packer.php');
@@ -4936,81 +4717,42 @@ final class api {
             throw new moodle_exception('generalexceptionmessage', 'error', '', 'Unable to create ZIP archive.');
         }
 
-        $tempdir = make_temp_directory('spotaward_zip_sources');
-        $zipfiles = [];
-        foreach ($files as $index => $file) {
-            if (!is_object($file) || !method_exists($file, 'copy_content_to')) {
-                continue;
-            }
-
-            $temppath = tempnam($tempdir, 'spotawardzip' . $index);
-            if ($temppath === false) {
-                continue;
-            }
-
-            $pdfpath = $temppath . '.pdf';
-            @rename($temppath, $pdfpath);
-
-            try {
-                $file->copy_content_to($pdfpath);
-                if (is_file($pdfpath) && filesize($pdfpath) > 0) {
-                    $zipfiles[$file->get_filename()] = $pdfpath;
-                } else {
-                    @unlink($pdfpath);
-                }
-            } catch (\Exception $e) {
-                @unlink($pdfpath);
-            }
-        }
-
-        if (empty($zipfiles)) {
+        $zipper = new \zip_packer();
+        $result = $zipper->archive_to_pathname($zipfiles, $tmpzip);
+        if (!$result || !is_file($tmpzip)) {
             @unlink($tmpzip);
-            throw new moodle_exception('nocertificates', 'local_spotaward');
+            throw new moodle_exception('generalexceptionmessage', 'error', '', 'Unable to create ZIP archive.');
         }
 
-        try {
-            $zipper = new \zip_packer();
-            $result = $zipper->archive_to_pathname($zipfiles, $tmpzip);
-            if (!$result || !is_file($tmpzip)) {
-                @unlink($tmpzip);
-                throw new moodle_exception('generalexceptionmessage', 'error', '', 'Unable to create ZIP archive.');
-            }
-
-            $zipcontent = file_get_contents($tmpzip);
-            if ($zipcontent === false) {
-                @unlink($tmpzip);
-                throw new moodle_exception('generalexceptionmessage', 'error', '', 'Unable to read ZIP archive.');
-            }
-
-            return [
-                'path' => $tmpzip,
-                'name' => $zipbasename . '.zip',
-                'content' => $zipcontent,
-            ];
-        } finally {
-            self::cleanup_temp_files(array_values($zipfiles));
+        $zipcontent = file_get_contents($tmpzip);
+        if ($zipcontent === false) {
+            @unlink($tmpzip);
+            throw new moodle_exception('generalexceptionmessage', 'error', '', 'Unable to read ZIP archive.');
         }
+
+        return [
+            'path' => $tmpzip,
+            'name' => $zipbasename . '.zip',
+            'content' => $zipcontent,
+        ];
     }
 
     /**
-     * Build admin attachment ZIP containing the uploaded PR and combined certificates PDF.
+     * Build admin attachment bundle containing the uploaded PR and certificates ZIP.
      *
      * @param int $nominationid
      * @param string $prpath
      * @param string $prfilename
-     * @param array $certificatepdf
+     * @param array $certificatezip
      * @return array
      */
     private static function build_admin_documents_bundle(int $nominationid, string $prpath, string $prfilename,
-            array $certificatepdf): array {
+            array $certificatezip): array {
         global $CFG;
 
-        if (!is_file($prpath)) {
+        $prcontent = file_get_contents($prpath);
+        if ($prcontent === false) {
             throw new moodle_exception('invalidparameter');
-        }
-
-        if ((filesize($prpath) ?: 0) > self::ADMIN_SHARE_MAX_BYTES) {
-            throw new moodle_exception('adminshareattachmenttoolarge', 'local_spotaward');
         }
 
         require_once(__DIR__ . '/../../../../lib/filestorage/zip_packer.php');
@@ -5022,11 +4764,9 @@ final class api {
         }
 
         $zipper = new \zip_packer();
-        $safeprfilename = self::normalize_admin_share_archive_filename($prfilename);
-        $safecertificatefilename = self::normalize_admin_share_archive_filename((string)$certificatepdf['name']);
         $zipfiles = [
-            'pr_document/' . $safeprfilename => $prpath,
-            'certificates/' . $safecertificatefilename => $certificatepdf['path'],
+            'pr_document/' . clean_filename($prfilename) => [$prcontent],
+            'certificates/' . clean_filename($certificatezip['name']) => [$certificatezip['content']],
         ];
 
         $result = $zipper->archive_to_pathname($zipfiles, $tmpzip);
@@ -5039,126 +4779,6 @@ final class api {
             'path' => $tmpzip,
             'name' => self::get_certificate_zip_basename($nominationid) . '_admin_documents.zip',
         ];
-    }
-
-    /**
-     * Build admin attachment ZIP containing the uploaded PR and compact individual certificates.
-     *
-     * This is a fallback for Share to Admin when the merged certificates PDF is still
-     * above the attachment limit. It keeps the share flow working without changing the
-     * normal dashboard merged-download behavior.
-     *
-     * @param int $nominationid
-     * @param string $prpath
-     * @param string $prfilename
-     * @return array
-     */
-    private static function build_admin_documents_bundle_with_compact_certificates(int $nominationid,
-            string $prpath, string $prfilename): array {
-        global $CFG;
-
-        if (!is_file($prpath)) {
-            throw new moodle_exception('invalidparameter');
-        }
-
-        if ((filesize($prpath) ?: 0) > self::ADMIN_SHARE_MAX_BYTES) {
-            throw new moodle_exception('adminshareattachmenttoolarge', 'local_spotaward');
-        }
-
-        $compactcertificates = self::generate_nomination_certificate_file_path_map($nominationid, 'adminshare');
-        if (empty($compactcertificates)) {
-            throw new moodle_exception('nocertificates', 'local_spotaward');
-        }
-
-        require_once(__DIR__ . '/../../../../lib/filestorage/zip_packer.php');
-
-        check_dir_exists($CFG->tempdir . '/zip');
-        $tmpzip = tempnam($CFG->tempdir . '/zip', 'spotawardadmin');
-        if ($tmpzip === false) {
-            throw new moodle_exception('generalexceptionmessage', 'error', '', 'Unable to create ZIP archive.');
-        }
-
-        try {
-            $safeprfilename = self::normalize_admin_share_archive_filename($prfilename);
-            $zipfiles = [
-                'pr_document/' . $safeprfilename => $prpath,
-            ];
-            foreach ($compactcertificates as $certfilename => $certpath) {
-                $safezippedcertname = self::normalize_admin_share_archive_filename((string)$certfilename);
-                $zipfiles['certificates/' . $safezippedcertname] = $certpath;
-            }
-
-            $zipper = new \zip_packer();
-            $result = $zipper->archive_to_pathname($zipfiles, $tmpzip);
-            if (!$result || !is_file($tmpzip)) {
-                @unlink($tmpzip);
-                throw new moodle_exception('generalexceptionmessage', 'error', '', 'Unable to create ZIP archive.');
-            }
-
-            return [
-                'path' => $tmpzip,
-                'name' => self::get_certificate_zip_basename($nominationid) . '_admin_documents.zip',
-            ];
-        } finally {
-            self::cleanup_temp_files(array_values($compactcertificates));
-        }
-    }
-
-    /**
-     * Generate certificate filenames mapped to temp PDF paths for a nomination.
-     *
-     * @param int $nominationid
-     * @param string $compressionprofile
-     * @return array
-     */
-    private static function generate_nomination_certificate_file_path_map(int $nominationid,
-            string $compressionprofile = 'default'): array {
-        $nomination = self::get_nomination($nominationid);
-        if (!in_array($nomination->status, ['ssteamprogress', 'closed'], true)) {
-            throw new moodle_exception('invalidparameter');
-        }
-
-        $templateid = (int)get_config('local_spotaward', 'certificate_templateid');
-        $model = self::get_beautiful_certificate_model($templateid);
-        $course = get_course($nomination->courseid);
-        $items = self::get_nomination_items($nominationid);
-        $tempdir = make_temp_directory('spotaward_compact_admin_bundle_certs');
-        $generated = [];
-
-        foreach ($items as $item) {
-            if (!in_array($item->status, ['ssteamprogress', 'closed'], true)) {
-                continue;
-            }
-
-            $student = core_user::get_user($item->studentid);
-            if (!$student) {
-                continue;
-            }
-
-            try {
-                $content = self::generate_certificate_using_bc(
-                        $model,
-                        $student,
-                        $course,
-                        $nomination,
-                        $item,
-                        $compressionprofile
-                    );
-                if (!is_string($content) || $content === '') {
-                    continue;
-                }
-
-                $temppath = self::write_pdf_temp_file($content, $tempdir, 'spotawardbundle' . (int)$item->id);
-                if ($temppath !== '') {
-                    $generated[self::get_certificate_filename((int)$item->id, (int)$student->id)] = $temppath;
-                }
-            } catch (\Throwable $e) {
-                debugging('Certificate generation failed for compact admin certificate file ' .
-                    $item->id . ': ' . $e->getMessage(), DEBUG_DEVELOPER);
-            }
-        }
-
-        return $generated;
     }
 
     /**
@@ -5198,7 +4818,7 @@ final class api {
             throw new moodle_exception('selectrecordsfordownload', 'local_spotaward');
         }
 
-        $storedfiles = [];
+        $files = [];
         foreach ($nominationids as $nominationid) {
             $nomination = self::get_nomination($nominationid);
             if (empty($nomination->adminsharedtime)) {
@@ -5207,16 +4827,18 @@ final class api {
 
             self::ensure_nomination_certificates_generated($nominationid);
             foreach (self::get_all_certificate_files($nominationid) as $file) {
-                $storedfiles[] = $file;
+                $files[] = $file;
             }
         }
 
-        $mergedpdfpath = self::merge_stored_pdf_files_to_temp_path($storedfiles, 'spotaward_admin_certificates.pdf');
-        if ($mergedpdfpath === '' || !is_file($mergedpdfpath)) {
+        if (empty($files)) {
             throw new moodle_exception('nocertificates', 'local_spotaward');
         }
 
         $now = time();
+        $filename = 'Spot_Award_Admin_Certificates_' . userdate($now, '%Y%m%d_%H%M%S') . '.pdf';
+
+        // Record delivery timestamps.
         [$insql, $params] = $DB->get_in_or_equal($nominationids, SQL_PARAMS_NAMED);
         $params['admindownloadedtime'] = $now;
         $params['admindownloadedby'] = $userid;
@@ -5230,21 +4852,24 @@ final class api {
             $params
         );
 
-        $filename = 'Spot_Award_Admin_Certificates_' . userdate($now, '%Y%m%d_%H%M%S') . '.pdf';
-        try {
-            header('Content-Type: application/pdf');
-            header('Content-Disposition: attachment; filename="' . $filename . '"');
-            header('Content-Length: ' . filesize($mergedpdfpath));
+        $pdfcontent = self::generate_merged_nominations_certificates_pdf($nominationids);
 
-            while (ob_get_level()) {
-                ob_end_clean();
-            }
-
-            readfile($mergedpdfpath);
-            exit;
-        } finally {
-            @unlink($mergedpdfpath);
+        while (ob_get_level()) {
+            ob_end_clean();
         }
+
+        header('Content-Type: application/pdf');
+        header('Content-Disposition: attachment; filename="' . $filename . '"');
+        header('Cache-Control: public, must-revalidate, max-age=0');
+        header('Pragma: public');
+        header('Expires: Sat, 26 Jul 1997 05:00:00 GMT');
+        header('Last-Modified: ' . gmdate('D, d M Y H:i:s') . ' GMT');
+        header('Content-Description: File Transfer');
+        header('Content-Transfer-Encoding: binary');
+        header('Content-Length: ' . strlen($pdfcontent));
+
+        echo $pdfcontent;
+        exit;
     }
 
     /**
@@ -5376,14 +5001,24 @@ final class api {
      * @param string $activitytype
      * @return array
      */
-    public static function get_course_report(int $courseid, string $activitytype = ''): array {
+    public static function get_course_report(int $courseid, string $activitytype = '', int $page = 0,
+            int $perpage = 25): array {
         $students = self::get_course_students($courseid, 0);
-        $report = self::build_course_activity_report($courseid, $students, $activitytype);
+        $studentcount = count($students);
+        $page = max(0, $page);
+        $perpage = max(1, min(100, $perpage));
+        if ($studentcount > 0) {
+            $page = min($page, (int)floor(($studentcount - 1) / $perpage));
+        }
+        $pagestudents = array_slice($students, $page * $perpage, $perpage);
+        $report = self::build_course_activity_report($courseid, $pagestudents, $activitytype);
 
         return [
             'activitytype' => $report['activitytype'],
             'activitycount' => count($report['activities']),
-            'studentcount' => count($students),
+            'studentcount' => $studentcount,
+            'page' => $page,
+            'perpage' => $perpage,
             'rows' => $report['rows'],
             'rowsbystudent' => $report['rowsbystudent'],
             'summarybystudent' => $report['summarybystudent'],
@@ -5422,14 +5057,32 @@ final class api {
                                  WHERE ra.userid = :pmuserid
                                    AND ra.roleid = :pmroleid
                                    AND ctx.contextlevel = :pmcourselevel
-                                   AND ctx.instanceid {$incoursesql}";
+                                   AND ctx.instanceid {$incoursesql}
+                                   AND EXISTS (
+                                       SELECT 1
+                                         FROM {user_enrolments} ue
+                                         JOIN {enrol} e ON e.id = ue.enrolid
+                                        WHERE ue.userid = ra.userid
+                                          AND e.courseid = ctx.instanceid
+                                          AND ue.status = 0
+                                          AND e.status = 0
+                                          AND (ue.timestart = 0 OR ue.timestart <= :pmnowstart)
+                                          AND (ue.timeend = 0 OR ue.timeend > :pmnowend)
+                                   )";
                 $pmparams = array_merge(
-                    ['pmuserid' => $userid, 'pmroleid' => $pmroleid, 'pmcourselevel' => CONTEXT_COURSE],
+                    [
+                        'pmuserid' => $userid,
+                        'pmroleid' => $pmroleid,
+                        'pmcourselevel' => CONTEXT_COURSE,
+                        'pmnowstart' => time(),
+                        'pmnowend' => time(),
+                    ],
                     $incourseparams
                 );
                 foreach ($DB->get_records_sql($pmcoursesql, $pmparams) as $record) {
                     $cid = (int)$record->courseid;
-                    if (isset($supportedcourses[$cid])) {
+                    if (isset($supportedcourses[$cid]) && has_capability(
+                            'local/spotaward:review', context_course::instance($cid), $userid)) {
                         $courses[$cid] = $supportedcourses[$cid];
                     }
                 }
@@ -6310,8 +5963,17 @@ final class api {
      * @param int $userid
      * @return array
      */
-    public static function get_nominator_submissions(int $userid): array {
+    public static function get_nominator_submissions(int $userid, int $page = 0, int $perpage = 0): array {
         global $DB;
+
+        $page = max(0, $page);
+        $perpage = $perpage > 0 ? $perpage : self::get_dashboard_page_size();
+        $total = (int)$DB->count_records('spotaward_nominations', ['nominatorid' => $userid]);
+        if ($total > 0) {
+            $page = min($page, (int)floor(($total - 1) / $perpage));
+        } else {
+            $page = 0;
+        }
 
         $sql = "SELECT n.*, c.fullname AS coursename, u.firstname AS pmfirstname, u.lastname AS pmlastname,
                        (SELECT COUNT(1)
@@ -6329,7 +5991,12 @@ final class api {
                   WHERE n.nominatorid = :userid
                ORDER BY n.timecreated DESC";
 
-        $submissions = array_values($DB->get_records_sql($sql, ['userid' => $userid]));
+        $submissions = array_values($DB->get_records_sql(
+            $sql,
+            ['userid' => $userid],
+            $page * $perpage,
+            $perpage
+        ));
 
         foreach ($submissions as $submission) {
             if (in_array($submission->status, ['ssteamprogress', 'closed', 'rejected'], true)) {
@@ -6346,7 +6013,12 @@ final class api {
             }
         }
 
-        return $submissions;
+        return [
+            'records' => $submissions,
+            'total' => $total,
+            'page' => $page,
+            'perpage' => $perpage,
+        ];
     }
 
     /**
@@ -6361,12 +6033,11 @@ final class api {
 
         $page = max(0, $page);
         $perpage = $perpage > 0 ? $perpage : self::get_dashboard_page_size();
-        $syscontextid = \context_system::instance()->id;
-        $params = ['userid' => $userid, 'syscontextid' => $syscontextid];
+        $params = ['userid' => $userid];
         $where = "n.programmanagerid = :userid";
 
         if ($statusfilter === 'active') {
-            $where .= " AND n.status IN ('pending', 'ssteamprogress')";
+            $where .= " AND n.status IN ('pending', 'underreview', 'ssteamprogress')";
         } else if ($statusfilter === 'closed') {
             $where .= " AND n.status IN ('closed', 'rejected')";
         }
@@ -6374,15 +6045,21 @@ final class api {
         $sql = "SELECT n.*, c.fullname AS coursename,
                        u.firstname, u.lastname,
                        maac.firstname AS maacfirstname, maac.lastname AS maaclastname,
-                       COALESCE(nis.totalitems, 0) AS totalitems,
-                       COALESCE(nis.revieweditems, 0) AS revieweditems,
-                       COALESCE(cfs.certificatesexist, 0) AS certificatesexist
+                       (SELECT COUNT(1) FROM {spotaward_nomination_items} ni
+                         WHERE ni.nominationid = n.id) AS totalitems,
+                       COALESCE((SELECT SUM(CASE WHEN ni.status IN ('ssteamprogress', 'rejected', 'closed')
+                                                THEN 1 ELSE 0 END)
+                                   FROM {spotaward_nomination_items} ni
+                                  WHERE ni.nominationid = n.id), 0) AS revieweditems,
+                       (SELECT COUNT(1) FROM {files} f
+                         WHERE f.component = 'local_spotaward'
+                           AND f.filearea = 'certificates'
+                           AND f.filename <> '.'
+                           AND f.itemid = n.id) AS certificatesexist
                   FROM {spotaward_nominations} n
                   JOIN {course} c ON c.id = n.courseid
-                  JOIN {user} u ON u.id = n.nominatorid
+             LEFT JOIN {user} u ON u.id = n.nominatorid
              LEFT JOIN {user} maac ON maac.id = n.maacexecutiveid
-             LEFT JOIN (" . self::get_dashboard_nomination_item_stats_sql() . ") nis ON nis.nominationid = n.id
-             LEFT JOIN (" . self::get_dashboard_certificate_stats_sql() . ") cfs ON cfs.nominationid = n.id
                  WHERE {$where}
                ORDER BY n.timecreated DESC";
 
@@ -6458,8 +6135,10 @@ final class api {
                  {$wheresql}
               GROUP BY n.status";
         foreach ($DB->get_records_sql($sql, $params) as $record) {
-            if (isset($counts[$record->status])) {
-                $counts[$record->status] = (int)$record->cnt;
+            if ($record->status === 'underreview') {
+                $counts['pending'] += (int)$record->cnt;
+            } else if (isset($counts[$record->status])) {
+                $counts[$record->status] += (int)$record->cnt;
             }
         }
 
@@ -6467,7 +6146,7 @@ final class api {
         if ($counts['pending'] > 0) {
             $prparams = $params;
             $prwhere = $wheresql ? $wheresql . ' AND ' : 'WHERE ';
-            $prwhere .= "n.status = 'pending'
+            $prwhere .= "n.status IN ('pending', 'underreview')
                          AND EXISTS (
                              SELECT 1 FROM {spotaward_nomination_items} ni
                               WHERE ni.nominationid = n.id AND ni.status IN ('ssteamprogress', 'rejected', 'closed')
@@ -6479,35 +6158,6 @@ final class api {
         }
 
         return $counts;
-    }
-
-    /**
-     * Build the SQL used to aggregate nomination item counts per nomination.
-     *
-     * @return string
-     */
-    private static function get_dashboard_nomination_item_stats_sql(): string {
-        return "SELECT ni.nominationid,
-                       COUNT(1) AS totalitems,
-                       COALESCE(SUM(CASE WHEN ni.status IN ('ssteamprogress', 'rejected', 'closed') THEN 1 ELSE 0 END), 0) AS revieweditems
-                  FROM {spotaward_nomination_items} ni
-              GROUP BY ni.nominationid";
-    }
-
-    /**
-     * Build the SQL used to aggregate certificate file counts per nomination.
-     *
-     * @return string
-     */
-    private static function get_dashboard_certificate_stats_sql(): string {
-        return "SELECT f.itemid AS nominationid,
-                       COUNT(1) AS certificatesexist
-                  FROM {files} f
-                 WHERE f.contextid = :syscontextid
-                   AND f.component = 'local_spotaward'
-                   AND f.filearea = 'certificates'
-                   AND f.filename <> '.'
-              GROUP BY f.itemid";
     }
 
     /**
@@ -6544,10 +6194,10 @@ final class api {
 
         $statuswhere = '';
         if ($statusfilter === 'active') {
-            $statuswhere = "n.status IN ('pending', 'ssteamprogress')";
+            $statuswhere = "n.status IN ('pending', 'underreview', 'ssteamprogress')";
         } else if ($statusfilter === 'closed') {
             $statuswhere = "n.status IN ('closed', 'rejected')";
-        } else if (in_array($statusfilter, ['pending', 'rejected', 'ssteamprogress', 'closed'], true)) {
+        } else if (in_array($statusfilter, ['pending', 'underreview', 'rejected', 'ssteamprogress', 'closed'], true)) {
             $statuswhere = "n.status = :statusfilter";
             $params['statusfilter'] = $statusfilter;
         }
@@ -6558,28 +6208,30 @@ final class api {
         }
         $combinedsql = $combined ? ('WHERE ' . implode(' AND ', $combined)) : '';
 
-        $syscontextid = \context_system::instance()->id;
-        $params['syscontextid'] = $syscontextid;
-
         $sql = "SELECT n.*, c.fullname AS coursename,
                        mentor.firstname AS mentorfirstname, mentor.lastname AS mentorlastname,
                        pm.firstname AS pmfirstname, pm.lastname AS pmlastname,
                        maac.firstname AS maacfirstname, maac.lastname AS maaclastname,
-                       COALESCE(nis.totalitems, 0) AS totalitems,
-                       COALESCE(nis.revieweditems, 0) AS revieweditems,
-                       COALESCE(cfs.certificatesexist, 0) AS certificatesexist
+                       (SELECT COUNT(1) FROM {spotaward_nomination_items} ni
+                         WHERE ni.nominationid = n.id) AS totalitems,
+                       COALESCE((SELECT SUM(CASE WHEN ni.status IN ('ssteamprogress', 'rejected', 'closed')
+                                                THEN 1 ELSE 0 END)
+                                   FROM {spotaward_nomination_items} ni
+                                  WHERE ni.nominationid = n.id), 0) AS revieweditems,
+                       (SELECT COUNT(1) FROM {files} f
+                         WHERE f.component = 'local_spotaward'
+                           AND f.filearea = 'certificates'
+                           AND f.filename <> '.'
+                           AND f.itemid = n.id) AS certificatesexist
                   FROM {spotaward_nominations} n
                   JOIN {course} c ON c.id = n.courseid
-                  JOIN {user} mentor ON mentor.id = n.nominatorid
-                  JOIN {user} pm ON pm.id = n.programmanagerid
+             LEFT JOIN {user} mentor ON mentor.id = n.nominatorid
+             LEFT JOIN {user} pm ON pm.id = n.programmanagerid
              LEFT JOIN {user} maac ON maac.id = n.maacexecutiveid
-             LEFT JOIN (" . self::get_dashboard_nomination_item_stats_sql() . ") nis ON nis.nominationid = n.id
-             LEFT JOIN (" . self::get_dashboard_certificate_stats_sql() . ") cfs ON cfs.nominationid = n.id
                   {$combinedsql}
                ORDER BY n.timecreated DESC";
 
         $countparams = $params;
-        unset($countparams['syscontextid']);
         $countsql = "SELECT COUNT(1)
                        FROM {spotaward_nominations} n
                        {$combinedsql}";
@@ -6637,11 +6289,11 @@ final class api {
         $sql = "SELECT n.id, n.courseid, n.maacexecutiveid, n.status, n.adminsharedtime, n.admindownloadedtime,
                        c.fullname AS coursename,
                        maac.firstname AS maacfirstname, maac.lastname AS maaclastname,
-                       COALESCE(nis.totalitems, 0) AS studentcount
+                       (SELECT COUNT(1) FROM {spotaward_nomination_items} ni
+                         WHERE ni.nominationid = n.id) AS studentcount
                   FROM {spotaward_nominations} n
                   JOIN {course} c ON c.id = n.courseid
              LEFT JOIN {user} maac ON maac.id = n.maacexecutiveid
-             LEFT JOIN (" . self::get_dashboard_nomination_item_stats_sql() . ") nis ON nis.nominationid = n.id
                  WHERE " . implode(' AND ', $where) . "
               ORDER BY n.adminsharedtime DESC, n.id DESC";
 
@@ -6833,9 +6485,9 @@ final class api {
     /**
      * Require access to submission detail and downstream export screens.
      *
-     * Nominators can still view their own history in index.php, but should not
-     * enter the detailed review/export workflow unless they also hold one of the
-     * downstream workflow roles for the same nomination.
+     * Nominators may view and export student details for their own nominations,
+     * as documented by the plugin feature set. Access still requires their current
+     * nomination-course assignment; a historical database reference is not enough.
      *
      * @param stdClass $nomination
      * @param int $userid
@@ -6859,16 +6511,24 @@ final class api {
             return true;
         }
 
-        if ($nomination->nominatorid == $userid) {
-            return true;
+        // Loose-comparison fix: use strict === with explicit int cast to prevent
+        // PHP type-coercion (e.g. 0 == null) from granting unintended access.
+        if ((int)$nomination->nominatorid === $userid) {
+            return self::can_nominate_in_course($userid, (int)$nomination->courseid);
         }
 
-        if ($nomination->programmanagerid == $userid) {
-            return true;
+        if ((int)$nomination->programmanagerid === $userid) {
+            return self::user_is_in_workflow_user_list(
+                $userid,
+                self::get_program_managers_for_course((int)$nomination->courseid)
+            );
         }
 
         if (!empty($nomination->maacexecutiveid) && (int)$nomination->maacexecutiveid === $userid) {
-            return true;
+            return self::user_is_in_workflow_user_list(
+                $userid,
+                self::get_maac_executives_for_course((int)$nomination->courseid)
+            );
         }
 
         if (!empty($nomination->adminsharedtime) && self::is_admin($userid)) {
@@ -6922,16 +6582,23 @@ final class api {
             return true;
         }
 
-        if ($nomination->nominatorid == $userid) {
-            return true;
+        // Loose-comparison fix: strict === with (int) cast.
+        if ((int)$nomination->nominatorid === $userid) {
+            return self::can_nominate_in_course($userid, (int)$nomination->courseid);
         }
 
-        if ($nomination->programmanagerid == $userid) {
-            return true;
+        if ((int)$nomination->programmanagerid === $userid) {
+            return self::user_is_in_workflow_user_list(
+                $userid,
+                self::get_program_managers_for_course((int)$nomination->courseid)
+            );
         }
 
         if (!empty($nomination->maacexecutiveid) && (int)$nomination->maacexecutiveid === $userid) {
-            return true;
+            return self::user_is_in_workflow_user_list(
+                $userid,
+                self::get_maac_executives_for_course((int)$nomination->courseid)
+            );
         }
 
         if (!empty($nomination->adminsharedtime) && self::is_admin($userid)) {
@@ -6943,6 +6610,38 @@ final class api {
         }
 
         return false;
+    }
+
+    /**
+     * Check whether a user may export student details for a nomination.
+     *
+     * Nominator CSV/PDF export is an intentional feature, but access must remain
+     * tied to the user's current course/workflow assignment.
+     *
+     * @param stdClass $nomination
+     * @param int $userid
+     * @return bool
+     */
+    public static function can_export_nomination_details(stdClass $nomination, int $userid): bool {
+        return self::can_access_submission_details($nomination, $userid);
+    }
+
+    /**
+     * Neutralise values that spreadsheet applications may interpret as formulas.
+     *
+     * @param mixed $value
+     * @return mixed
+     */
+    public static function prepare_csv_cell($value) {
+        if (!is_string($value)) {
+            return $value;
+        }
+
+        if (preg_match('/^[\x00-\x20]*[=+\-@]/u', $value)) {
+            return chr(39) . $value;
+        }
+
+        return $value;
     }
 
     /**
@@ -6989,8 +6688,11 @@ final class api {
         if (is_siteadmin($userid) || self::is_manager($userid)) {
             return true;
         }
-
-        return in_array($nomination->status, ['pending', 'rejected'], true);
+        // Bug #5 fix: The fallback previously returned true for ANY user if the status
+        // matched, completely ignoring who the caller is. Only the original nominator
+        // may delete their own pending or rejected nomination.
+        return in_array($nomination->status, ['pending', 'rejected'], true)
+            && (int)$nomination->nominatorid === $userid;
     }
 
     /**
@@ -7006,6 +6708,14 @@ final class api {
     public static function update_item_status(int $itemid, string $status, int $actorid, ?string $reason = null, bool $skiprefresh = false): void {
         global $DB;
 
+        $factory = \core\lock\lock_config::get_lock_factory('local_spotaward');
+        $itemlock = $factory->get_lock('nomination_item_' . $itemid, 60);
+        if (!$itemlock) {
+            throw new moodle_exception('errorprocessingrequest', 'error');
+        }
+
+        try {
+        $transaction = $DB->start_delegated_transaction();
         $item = $DB->get_record('spotaward_nomination_items', ['id' => $itemid], '*', MUST_EXIST);
         $nomination = self::get_nomination($item->nominationid);
 
@@ -7032,12 +6742,14 @@ final class api {
         }
         $item->reviewedby = $actorid;
         $item->timereviewed = time();
-        $DB->update_record('spotaward_nomination_items', $item);
 
-        // Bust caches so refresh_nomination_status() and any downstream callers
-        // (e.g. ensure_nomination_certificates_generated) read the updated DB state.
-        unset(self::$nominationitemscache[$item->nominationid]);
-        unset(self::$nominationcache[$item->nominationid]);
+        $item->status = $status;
+        if ($reason !== null) {
+            $item->rejectionreason = $reason;
+        }
+        $item->reviewedby = $actorid;
+        $item->timereviewed = time();
+        $DB->update_record('spotaward_nomination_items', $item);
 
         $DB->insert_record('spotaward_status_track', (object)[
             'nominationid' => $item->nominationid,
@@ -7048,9 +6760,17 @@ final class api {
             'reason' => $reason,
             'timecreated' => time(),
         ]);
+        $transaction->allow_commit();
+
+        // Bust caches only after the item and its matching audit row are committed.
+        unset(self::$nominationitemscache[$item->nominationid]);
+        unset(self::$nominationcache[$item->nominationid]);
 
         if (!$skiprefresh) {
             self::refresh_nomination_status($item->nominationid);
+        }
+        } finally {
+            $itemlock->release();
         }
     }
 
@@ -7247,5 +6967,24 @@ final class api {
         $transaction->allow_commit();
         unset(self::$nominationcache[$nominationid]);
         unset(self::$nominationitemscache[$nominationid]);
+    }
+
+    /**
+     * Bug #12 fix: Safe file deletion that logs failures instead of silently ignoring them.
+     *
+     * All temporary PDF files in this plugin should be deleted via this method so
+     * leftover cert data in $CFG->tempdir does not accumulate undetected.
+     *
+     * @param string $path Absolute filesystem path to delete.
+     * @return void
+     */
+    private static function safe_unlink(string $path): void {
+        if ($path === '' || !is_file($path)) {
+            return;
+        }
+        if (!unlink($path)) {
+            // Log but do not throw — cleanup failures should not abort the main workflow.
+            debugging('local_spotaward: Failed to delete temporary file: ' . $path, DEBUG_DEVELOPER);
+        }
     }
 }

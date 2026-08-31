@@ -28,7 +28,10 @@ $capabilities = [
     'local/spotaward:nominate' => [
         'captype' => 'write',
         'contextlevel' => CONTEXT_SYSTEM,
-        'archetypes' => [],
+        'archetypes' => [
+            'teacher' => CAP_ALLOW,
+            'editingteacher' => CAP_ALLOW,
+        ],
     ],
     'local/spotaward:review' => [
         'captype' => 'write',
@@ -63,6 +66,12 @@ $capabilities = [
     ],
     'local/spotaward:viewcert' => [
         'captype' => 'read',
+        'contextlevel' => CONTEXT_SYSTEM,
+        'archetypes' => [],
+    ],
+    'local/spotaward:administer' => [
+        'captype' => 'write',
+        'riskbitmask' => RISK_PERSONAL,
         'contextlevel' => CONTEXT_SYSTEM,
         'archetypes' => [],
     ],

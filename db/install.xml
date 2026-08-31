@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<XMLDB PATH="local/spotaward/db" VERSION="2026070101" COMMENT="XMLDB file for local_spotaward"
+<XMLDB PATH="local/spotaward/db" VERSION="2026081901" COMMENT="XMLDB file for local_spotaward"
     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
     xsi:noNamespaceSchemaLocation="../../../lib/xmldb/xmldb.xsd">
     <TABLES>
@@ -27,11 +27,12 @@
                 <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
             </KEYS>
             <INDEXES>
-                <INDEX NAME="nominator_idx" UNIQUE="false" FIELDS="nominatorid"/>
-                <INDEX NAME="programmanager_idx" UNIQUE="false" FIELDS="programmanagerid"/>
-                <INDEX NAME="maacexecutive_idx" UNIQUE="false" FIELDS="maacexecutiveid"/>
                 <INDEX NAME="course_idx" UNIQUE="false" FIELDS="courseid"/>
                 <INDEX NAME="status_idx" UNIQUE="false" FIELDS="status"/>
+                <INDEX NAME="nominator_time_idx" UNIQUE="false" FIELDS="nominatorid, timecreated"/>
+                <INDEX NAME="pm_status_time_idx" UNIQUE="false" FIELDS="programmanagerid, status, timecreated"/>
+                <INDEX NAME="maac_status_time_idx" UNIQUE="false" FIELDS="maacexecutiveid, status, timecreated"/>
+                <INDEX NAME="adminshared_status_idx" UNIQUE="false" FIELDS="adminsharedtime, status"/>
             </INDEXES>
         </TABLE>
         <TABLE NAME="spotaward_nomination_items" COMMENT="Student level nomination records">

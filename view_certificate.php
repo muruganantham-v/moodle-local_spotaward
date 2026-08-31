@@ -32,6 +32,7 @@ $itemid = optional_param('itemid', 0, PARAM_INT);
 $action = optional_param('action', 'view', PARAM_TEXT);
 
 require_login();
+require_sesskey();
 
 $nomination = $DB->get_record('spotaward_nominations', ['id' => $nominationid], '*', MUST_EXIST);
 if (!in_array($nomination->status, ['ssteamprogress', 'closed'], true)) {
@@ -39,33 +40,13 @@ if (!in_array($nomination->status, ['ssteamprogress', 'closed'], true)) {
 }
 
 require_once(__DIR__ . '/classes/local/api.php');
+local_spotaward\local\api::require_nomination_access($nomination, $USER->id);
 
-$isowncertificate = false;
-if ($userid > 0 && (int)$userid === (int)$USER->id && $nomination->status === 'closed') {
-    if ($itemid > 0) {
-        $isowncertificate = $DB->record_exists('spotaward_nomination_items', [
-            'id' => $itemid,
-            'nominationid' => $nominationid,
-            'studentid' => $userid,
-            'status' => 'closed'
-        ]);
-    } else {
-        $isowncertificate = $DB->record_exists('spotaward_nomination_items', [
-            'nominationid' => $nominationid,
-            'studentid' => $userid,
-            'status' => 'closed'
-        ]);
-    }
-}
-
-if (!$isowncertificate) {
-    local_spotaward\local\api::require_submission_details_access($nomination, $USER->id);
-
-    $cancertificateaccess = is_siteadmin() || local_spotaward\local\api::is_manager($USER->id) ||
-        local_spotaward\local\api::is_assigned_maac_executive($nomination, (int)$USER->id);
-    if (!$cancertificateaccess) {
-        throw new moodle_exception('notauthorised', 'local_spotaward');
-    }
+$cancertificateaccess = is_siteadmin() || local_spotaward\local\api::is_manager($USER->id) ||
+    local_spotaward\local\api::is_ss_team($USER->id) ||
+    local_spotaward\local\api::is_assigned_maac_executive($nomination, (int)$USER->id);
+if (!$cancertificateaccess) {
+    throw new moodle_exception('notauthorised', 'local_spotaward');
 }
 
 local_spotaward\local\api::ensure_nomination_certificates_generated($nominationid);
@@ -91,57 +72,34 @@ if ($userid > 0) {
         throw new moodle_exception('certificatenotfound', 'local_spotaward');
     }
 
-    $forcedownload = $action === 'download';
-    while (ob_get_level()) {
-        ob_end_clean();
-    }
-    send_stored_file($file, 0, 0, $forcedownload, [
-        'filename' => $filename,
-        'dontclose' => false,
-        'display' => $forcedownload ? 'attachment' : 'inline'
-    ]);
-    exit;
+    $content = $file->get_content();
 } else {
     $filename = "Spot_Award_Certificates_{$nominationid}.pdf";
-
-    $files = local_spotaward\local\api::get_all_certificate_files($nominationid);
-
-    if (empty($files)) {
-        throw new moodle_exception('nocertificates', 'local_spotaward');
-    }
-
-    $mergedpath = local_spotaward\local\api::merge_stored_pdf_files_to_temp_path($files, $filename);
-    if ($mergedpath === '' || !is_file($mergedpath)) {
-        throw new moodle_exception('nocertificates', 'local_spotaward');
-    }
-
-    try {
-        if ($action === 'download') {
-            header('Content-Type: application/pdf');
-            header('Content-Disposition: attachment; filename="' . $filename . '"');
-            header('Cache-Control: public, must-revalidate, max-age=0');
-            header('Pragma: public');
-            header('Expires: Sat, 26 Jul 1997 05:00:00 GMT');
-            header('Last-Modified: ' . gmdate('D, d M Y H:i:s') . ' GMT');
-            header('Content-Description: File Transfer');
-            header('Content-Transfer-Encoding: binary');
-            header('Content-Length: ' . filesize($mergedpath));
-        } else {
-            header('Content-Type: application/pdf');
-            header('Content-Disposition: inline; filename="' . $filename . '"');
-            header('Cache-Control: public, must-revalidate, max-age=0');
-            header('Pragma: public');
-            header('Expires: Sat, 26 Jul 1997 05:00:00 GMT');
-            header('Last-Modified: ' . gmdate('D, d M Y H:i:s') . ' GMT');
-            header('Content-Length: ' . filesize($mergedpath));
-        }
-
-        while (ob_get_level()) {
-            ob_end_clean();
-        }
-        readfile($mergedpath);
-        die();
-    } finally {
-        @unlink($mergedpath);
-    }
+    $content = local_spotaward\local\api::generate_merged_nominations_certificates_pdf([$nominationid]);
 }
+
+if ($action === 'download') {
+    header('Content-Type: application/pdf');
+    header('Content-Disposition: attachment; filename="' . $filename . '"');
+    header('Cache-Control: public, must-revalidate, max-age=0');
+    header('Pragma: public');
+    header('Expires: Sat, 26 Jul 1997 05:00:00 GMT');
+    header('Last-Modified: ' . gmdate('D, d M Y H:i:s') . ' GMT');
+    header('Content-Description: File Transfer');
+    header('Content-Transfer-Encoding: binary');
+    header('Content-Length: ' . strlen($content));
+} else {
+    header('Content-Type: application/pdf');
+    header('Content-disposition: inline; filename="' . $filename . '"');
+    header('Cache-Control: public, must-revalidate, max-age=0');
+    header('Pragma: public');
+    header('Expires: Sat, 26 Jul 1997 05:00:00 GMT');
+    header('Last-Modified: ' . gmdate('D, d M Y H:i:s') . ' GMT');
+    header('Content-Length: ' . strlen($content));
+}
+
+while (ob_get_level()) {
+    ob_end_clean();
+}
+echo $content;
+die();

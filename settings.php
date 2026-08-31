@@ -1,5 +1,26 @@
 <?php
 // This file is part of Moodle - http://moodle.org/
+//
+// Moodle is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Moodle is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
+
+/**
+ * Settings definitions for Spot Award System.
+ *
+ * @package   local_spotaward
+ * @copyright 2026
+ * @license   http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
+ */
 
 defined('MOODLE_INTERNAL') || die();
 
@@ -60,37 +81,37 @@ if ($hassiteconfig) {
         $roleoptions
     ));
 
-$settings->add(new admin_setting_configselect(
-    'local_spotaward/program_manager_role',
-    get_string('program_manager_role_setting', 'local_spotaward'),
-    get_string('program_manager_role_setting_desc', 'local_spotaward'),
-    'programmanagers',
-    $roleoptions
-));
+    $settings->add(new admin_setting_configselect(
+        'local_spotaward/program_manager_role',
+        get_string('program_manager_role_setting', 'local_spotaward'),
+        get_string('program_manager_role_setting_desc', 'local_spotaward'),
+        'programmanagers',
+        $roleoptions
+    ));
 
-$settings->add(new admin_setting_configselect(
-    'local_spotaward/admin_role',
-    get_string('admin_role_setting', 'local_spotaward'),
-    get_string('admin_role_setting_desc', 'local_spotaward'),
-    'admin',
-    $roleoptions
-));
+    $settings->add(new admin_setting_configselect(
+        'local_spotaward/admin_role',
+        get_string('admin_role_setting', 'local_spotaward'),
+        get_string('admin_role_setting_desc', 'local_spotaward'),
+        'admin',
+        $roleoptions
+    ));
 
-$settings->add(new admin_setting_configselect(
-    'local_spotaward/ss_team_role',
-    get_string('ss_team_role_setting', 'local_spotaward'),
-    get_string('ss_team_role_setting_desc', 'local_spotaward'),
-    'ssteam',
-    $roleoptions
-));
+    $settings->add(new admin_setting_configselect(
+        'local_spotaward/ss_team_role',
+        get_string('ss_team_role_setting', 'local_spotaward'),
+        get_string('ss_team_role_setting_desc', 'local_spotaward'),
+        'ssteam',
+        $roleoptions
+    ));
 
-$settings->add(new admin_setting_configselect(
-    'local_spotaward/manager_role',
-    get_string('manager_role_setting', 'local_spotaward'),
-    get_string('manager_role_setting_desc', 'local_spotaward'),
-    'manager',
-    $roleoptions
-));
+    $settings->add(new admin_setting_configselect(
+        'local_spotaward/manager_role',
+        get_string('manager_role_setting', 'local_spotaward'),
+        get_string('manager_role_setting_desc', 'local_spotaward'),
+        'manager',
+        $roleoptions
+    ));
 
     $settings->add(new admin_setting_configselect(
         'local_spotaward/student_role',
@@ -122,12 +143,12 @@ $settings->add(new admin_setting_configselect(
         PARAM_URL
     ));
 
-    $settings->add(new admin_setting_configtext(
+    // Bug #11 fix: Use password-type field so the API key is masked in the admin UI.
+    $settings->add(new admin_setting_configpasswordunmask(
         'local_spotaward/zohocliq_api_key',
         get_string('zohocliq_api_key', 'local_spotaward'),
         get_string('zohocliq_api_key_desc', 'local_spotaward'),
-        '',
-        PARAM_TEXT
+        ''
     ));
 
     $settings->add(new admin_setting_heading(

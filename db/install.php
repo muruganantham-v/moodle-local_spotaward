@@ -1,5 +1,26 @@
 <?php
 // This file is part of Moodle - http://moodle.org/
+//
+// Moodle is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Moodle is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
+
+/**
+ * Seed notification template config for new installs.
+ *
+ * @package   local_spotaward
+ * @copyright 2026
+ * @license   http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
+ */
 
 defined('MOODLE_INTERNAL') || die();
 
@@ -43,4 +64,23 @@ function xmldb_local_spotaward_install(): void {
         implode("\n", \local_spotaward\local\constants::default_nomination_course_shortname_prefixes()),
         'local_spotaward'
     );
+
+    update_capabilities('local_spotaward');
+    $systemcontext = context_system::instance();
+    $rolecapabilities = [
+        ['nominators', 'local/spotaward:nominate'],
+        ['programmanagers', 'local/spotaward:review'],
+        ['ssteam', 'local/spotaward:sstask'],
+        ['admin', 'local/spotaward:administer'],
+        ['manager', 'local/spotaward:viewreports'],
+        ['teacher', 'local/spotaward:nominate'],
+        ['editingteacher', 'local/spotaward:nominate'],
+    ];
+    global $DB;
+    foreach ($rolecapabilities as [$roleshortname, $capability]) {
+        $roleid = $DB->get_field('role', 'id', ['shortname' => $roleshortname]);
+        if ($roleid) {
+            assign_capability($capability, CAP_ALLOW, (int)$roleid, $systemcontext->id, true);
+        }
+    }
 }

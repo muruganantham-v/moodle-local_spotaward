@@ -1,5 +1,26 @@
 <?php
 // This file is part of Moodle - http://moodle.org/
+//
+// Moodle is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Moodle is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
+
+/**
+ * AJAX endpoints for local_spotaward.
+ *
+ * @package   local_spotaward
+ * @copyright 2026
+ * @license   http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
+ */
 
 define('AJAX_SCRIPT', true);
 
@@ -47,16 +68,24 @@ if ($action === 'autosavedraft') {
         http_response_code(403);
         echo json_encode([
             'saved' => false,
-            'message' => 'Access denied',
+            'message' => get_string('accessdenied', 'local_spotaward'),
         ]);
         die();
     }
 
     try {
+        $awardpayload = optional_param('awardpayload', '', PARAM_RAW_TRIMMED);
+        if ($awardpayload !== '') {
+            $decoded = json_decode($awardpayload, true);
+            if (json_last_error() !== JSON_ERROR_NONE || !is_array($decoded)) {
+                throw new moodle_exception('invalidparameter');
+            }
+        }
+
         $data = (object)[
             'courseid' => optional_param('courseid', 0, PARAM_INT),
             'modulename' => optional_param('modulename', '', PARAM_TEXT),
-            'awardpayload' => optional_param('awardpayload', '', PARAM_RAW_TRIMMED),
+            'awardpayload' => $awardpayload,
             'professional' => optional_param('professional', '', PARAM_TEXT),
             'programmanagerid' => optional_param('programmanagerid', 0, PARAM_INT),
             'maacexecutiveid' => optional_param('maacexecutiveid', 0, PARAM_INT),
@@ -69,45 +98,47 @@ if ($action === 'autosavedraft') {
             'timesaved' => (int)($state['timesaved'] ?? 0),
         ]);
     } catch (Throwable $e) {
+        // Bug #8 fix: Never expose raw PHP exception messages to the client.
+        // Log the full detail server-side for debugging.
+        debugging('local_spotaward autosave error: ' . $e->getMessage(), DEBUG_DEVELOPER);
         http_response_code(400);
         echo json_encode([
-            'saved' => false,
-            'message' => $e->getMessage(),
+            'saved'   => false,
+            'message' => get_string('autosaveerror', 'local_spotaward'),
         ]);
     }
     die();
 }
 
+// Bug #1 fix: Protect the courseoptions endpoint with a sesskey so it cannot be
+// triggered cross-site. Student/staff PII must not be readable via CSRF.
+require_sesskey();
+
 $courseid = required_param('courseid', PARAM_INT);
 
 if ($courseid <= 0) {
-    echo json_encode(['error' => 'Invalid course ID', 'students' => [], 'programmanagers' => [], 'categories' => []]);
+    echo json_encode(['error' => get_string('invalidcourseid', 'local_spotaward'), 'students' => [], 'programmanagers' => [], 'categories' => []]);
     die();
 }
 
 if (!api::user_can_access($USER->id)) {
     http_response_code(403);
-    echo json_encode(['error' => 'Access denied', 'students' => [], 'programmanagers' => [], 'categories' => []]);
+    echo json_encode(['error' => get_string('accessdenied', 'local_spotaward'), 'students' => [], 'programmanagers' => [], 'categories' => []]);
     die();
 }
 
-if (!is_siteadmin() && !api::is_manager($USER->id) && !api::is_ss_team($USER->id)) {
-    $coursecontext = context_course::instance($courseid);
-    $canaccess = api::can_nominate_in_course($USER->id, $courseid) ||
-                 has_capability('local/spotaward:nominate', $coursecontext) ||
-                 has_capability('local/spotaward:review', $coursecontext);
-
-    if (!$canaccess) {
-        http_response_code(403);
-        echo json_encode([
-            'error' => 'Access denied to this course context',
-            'students' => [],
-            'programmanagers' => [],
-            'maacexecutives' => [],
-            'categories' => []
-        ]);
-        die();
-    }
+// This endpoint supplies the nomination form and exposes student PII. Manager or
+// SS-Team membership elsewhere on the site must never grant access to this course.
+if (!api::can_nominate_in_course((int)$USER->id, $courseid)) {
+    http_response_code(403);
+    echo json_encode([
+        'error' => get_string('accessdeniedcoursecontext', 'local_spotaward'),
+        'students' => [],
+        'programmanagers' => [],
+        'maacexecutives' => [],
+        'categories' => [],
+    ]);
+    die();
 }
 
 $students = [];
@@ -124,20 +155,21 @@ foreach (api::get_course_students($courseid, $USER->id) as $student) {
 $programmanagers = [];
 foreach (api::get_program_managers_for_course($courseid) as $pm) {
     $name = trim(($pm->firstname ?? '') . ' ' . ($pm->lastname ?? ''));
+    // Bug #4 fix: Only id+name is needed client-side for the dropdown.
+    // Staff email addresses must not be sent to arbitrary authenticated users.
     $programmanagers[] = [
-        'id'    => (int) $pm->id,
-        'name'  => $name,
-        'email' => $pm->email ?? '',
+        'id'   => (int) $pm->id,
+        'name' => $name,
     ];
 }
 
 $maacexecutives = [];
 foreach (api::get_maac_executives_for_course($courseid) as $maac) {
     $name = trim(($maac->firstname ?? '') . ' ' . ($maac->lastname ?? ''));
+    // Bug #4 fix: Strip email — id+name is sufficient for the nomination form.
     $maacexecutives[] = [
-        'id' => (int)$maac->id,
+        'id'   => (int)$maac->id,
         'name' => $name,
-        'email' => $maac->email ?? '',
     ];
 }
 

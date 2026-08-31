@@ -4,7 +4,7 @@ set -euo pipefail
 
 usage() {
     cat <<'EOF'
-Deploy local/batchanalytics to a Moodle cluster.
+Deploy local/spotaward to a Moodle cluster.
 
 Usage:
   ./scripts/deploy_cluster.sh --config ./scripts/deploy_cluster.env
@@ -26,7 +26,7 @@ Required config values:
 
 Optional config values:
   PHP_BIN                PHP binary path on remote host (default: php)
-  PLUGIN_NAME            Plugin directory name under local/ (default: batchanalytics)
+  PLUGIN_NAME            Plugin directory name under local/ (must be spotaward)
   PLUGIN_DIR             Local plugin source directory (default: parent of this script)
   SSH_OPTS               Extra ssh options (default: "-o BatchMode=yes")
   BACKUP_DIR             Remote backup directory (default: $REMOTE_MOODLE_DIR/local/.deploy-backups)
@@ -99,7 +99,7 @@ set +a
 : "${REMOTE_MOODLE_DIR:?REMOTE_MOODLE_DIR is required in config}"
 
 PHP_BIN="${PHP_BIN:-php}"
-PLUGIN_NAME="${PLUGIN_NAME:-batchanalytics}"
+PLUGIN_NAME="${PLUGIN_NAME:-spotaward}"
 SSH_OPTS="${SSH_OPTS:--o BatchMode=yes}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -116,6 +116,24 @@ if [[ ! -d "$PLUGIN_DIR" ]]; then
     echo "Local PLUGIN_DIR does not exist: $PLUGIN_DIR" >&2
     exit 1
 fi
+
+if [[ "$PLUGIN_NAME" != "spotaward" ]]; then
+    echo "PLUGIN_NAME must be spotaward; refusing a potentially destructive --delete sync." >&2
+    exit 1
+fi
+
+if [[ ! -f "$PLUGIN_DIR/version.php" ]] ||
+        ! grep -q "local_spotaward" "$PLUGIN_DIR/version.php"; then
+    echo "PLUGIN_DIR is not a local_spotaward source tree: $PLUGIN_DIR" >&2
+    exit 1
+fi
+
+case "$REMOTE_MOODLE_DIR" in
+    ""|/|/var|/var/www|/var/www/html)
+        echo "REMOTE_MOODLE_DIR is too broad for safe deployment: $REMOTE_MOODLE_DIR" >&2
+        exit 1
+        ;;
+esac
 
 PRIMARY_FOUND=0
 for host in $SERVERS; do

@@ -359,17 +359,96 @@ define([], function() {
                 if (fieldMapEl && fieldMapEl.value) {
                     fieldMap = parseJson(fieldMapEl.value, {});
                 }
-                var categories = [];
-                Object.keys(fieldMap).forEach(function(fieldName) {
+                var fieldNames = Object.keys(fieldMap);
+                var isAdvancedC = fieldNames.some(function(fieldName) {
+                    return String(fieldMap[fieldName] || '').indexOf('Mid C') !== -1;
+                });
+
+                var allCategoryData = [];
+                var midSelectedCount = 0;
+                var endSelectedCount = 0;
+
+                fieldNames.forEach(function(fieldName) {
+                    var catName = String(fieldMap[fieldName] || '');
+                    var isMidCat = catName.indexOf('Mid C') !== -1;
                     var select = form.querySelector('[name="' + fieldName + '[]"]') ||
                         form.querySelector('[name="' + fieldName + '"]');
                     var count = getSelectValues(select).length;
-                    categories.push({
-                        name: String(fieldMap[fieldName]),
+                    var hasSelection = count > 0;
+                    if (isMidCat) {
+                        if (hasSelection) {
+                            midSelectedCount++;
+                        }
+                    } else {
+                        if (hasSelection) {
+                            endSelectedCount++;
+                        }
+                    }
+                    allCategoryData.push({
+                        name: catName,
+                        isMidCat: isMidCat,
                         studentCount: count,
-                        hasSelection: count > 0
+                        hasSelection: hasSelection
                     });
                 });
+
+                var isMid = true;
+                if (isAdvancedC) {
+                    if (endSelectedCount > 0 && midSelectedCount === 0) {
+                        isMid = false;
+                    } else if (midSelectedCount > 0 && endSelectedCount === 0) {
+                        isMid = true;
+                    } else {
+                        var activeTabBtn = form.querySelector('.spotaward-category-tab-btn.is-active') ||
+                            document.querySelector('.spotaward-category-tab-btn.is-active');
+                        var midPane = form.querySelector('.spotaward-category-pane-midc, [data-pane="midc"]') ||
+                            document.querySelector('.spotaward-category-pane-midc, [data-pane="midc"]');
+                        var endPane = form.querySelector('.spotaward-category-pane-endc, [data-pane="endc"]') ||
+                            document.querySelector('.spotaward-category-pane-endc, [data-pane="endc"]');
+                        var moduleField = getField('modulename');
+                        var moduleVal = moduleField ? String(moduleField.value || '').trim() : '';
+
+                        if (activeTabBtn) {
+                            var target = activeTabBtn.getAttribute('data-tab-target');
+                            if (target === 'endc') {
+                                isMid = false;
+                            } else if (target === 'midc') {
+                                isMid = true;
+                            }
+                        } else if (endPane && endPane.style.display !== 'none' && (!midPane || midPane.style.display === 'none')) {
+                            isMid = false;
+                        } else if (midPane && midPane.style.display !== 'none') {
+                            isMid = true;
+                        } else if (moduleVal.indexOf('End') !== -1) {
+                            isMid = false;
+                        } else if (moduleVal.indexOf('Mid') !== -1) {
+                            isMid = true;
+                        }
+                    }
+
+                    var modField = getField('modulename');
+                    if (modField) {
+                        modField.value = isMid ? 'Advanced C - Mid' : 'Advanced C - End';
+                    }
+                }
+
+                var categories = [];
+                allCategoryData.forEach(function(item) {
+                    if (isAdvancedC) {
+                        if (isMid && !item.isMidCat) {
+                            return;
+                        }
+                        if (!isMid && item.isMidCat) {
+                            return;
+                        }
+                    }
+                    categories.push({
+                        name: item.name,
+                        studentCount: item.studentCount,
+                        hasSelection: item.hasSelection
+                    });
+                });
+
                 var selected = categories.filter(function(category) {
                     return category.hasSelection;
                 }).length;
@@ -378,7 +457,9 @@ define([], function() {
                     total: categories.length,
                     selected: selected,
                     unselected: unselected,
-                    categories: categories
+                    categories: categories,
+                    isAdvancedC: isAdvancedC,
+                    isMid: isMid
                 };
             }
 
@@ -388,6 +469,14 @@ define([], function() {
 
             function openModal() {
                 var status = getCategoryStatus();
+                var modalTitleEl = backdrop.querySelector('#spotaward-submit-confirm-title');
+                if (modalTitleEl) {
+                    if (status.isAdvancedC) {
+                        modalTitleEl.textContent = 'Submit nomination (' + (status.isMid ? 'Mid C' : 'End C') + ')';
+                    } else {
+                        modalTitleEl.textContent = 'Submit nomination';
+                    }
+                }
                 categoryList.innerHTML = '';
                 var html = '';
                 if (status.total > 0) {
@@ -397,7 +486,8 @@ define([], function() {
                     var unselectedCats = status.categories.filter(function(category) {
                         return !category.hasSelection;
                     });
-                    html += '<div class="spotaward-summary-bar mb-2">Selected: <strong>' + status.selected + '/' + status.total + '</strong> categories &mdash; Not selected: <strong>' + status.unselected + '/' + status.total + '</strong> categories</div>';
+                    var phaseBadge = status.isAdvancedC ? ' <span class="badge ' + (status.isMid ? 'badge-info' : 'badge-primary') + '" style="font-size:0.8rem;vertical-align:middle;margin-left:4px;">' + (status.isMid ? 'Mid C' : 'End C') + '</span>' : '';
+                    html += '<div class="spotaward-summary-bar mb-2">Selected: <strong>' + status.selected + '/' + status.total + '</strong> categories' + phaseBadge + ' &mdash; Not selected: <strong>' + status.unselected + '/' + status.total + '</strong> categories</div>';
                     if (selectedCats.length > 0) {
                         html += '<div class="spotaward-section-label">Selected categories:</div>';
                         html += '<div class="spotaward-category-items spotaward-category-items-selected">';

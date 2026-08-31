@@ -1,5 +1,26 @@
 <?php
 // This file is part of Moodle - http://moodle.org/
+//
+// Moodle is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Moodle is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
+
+/**
+ * Library functions and hooks for Spot Award System.
+ *
+ * @package   local_spotaward
+ * @copyright 2026
+ * @license   http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
+ */
 
 defined('MOODLE_INTERNAL') || die();
 
@@ -186,6 +207,7 @@ function local_spotaward_extend_navigation(global_navigation $nav): void {
 
 function local_spotaward_nomination_form_js(moodle_url $ajaxurl): string {
     $ajaxUrl = $ajaxurl->out(false);
+    $sesskey = sesskey();
     $coursemodulemap = json_encode(\local_spotaward\local\constants::course_module_map());
     $advancedcategories = json_encode(array_values(\local_spotaward\local\constants::advanced_c_award_categories()));
     $standardcategories = json_encode(array_values(\local_spotaward\local\constants::standard_award_categories()));
@@ -264,6 +286,19 @@ function local_spotaward_nomination_form_js(moodle_url $ajaxurl): string {
         '.spotaward-category-icon{flex-shrink:0;width:20px;text-align:center;}',
         '.spotaward-category-name{flex:1;font-weight:500;}',
         '.spotaward-category-count{color:#5d746d;font-size:0.85rem;white-space:nowrap;}',
+        '.spotaward-category-tabs-slot{display:inline-flex;align-items:center;margin-left:6px;}',
+        '.spotaward-header-colon{font-weight:700;color:#1e293b;font-size:14.5px;margin-right:8px;}',
+        '.spotaward-category-tabs-nav{display:inline-flex;align-items:center;background:#ffffff;border:1.5px solid #0f6cbf;border-radius:6px;padding:2px;gap:3px;margin:0;box-shadow:0 1px 4px rgba(15,108,191,0.15);}',
+        '.spotaward-category-tab-btn{display:inline-flex;align-items:center;gap:6px;padding:3px 13px;min-height:25px;font-weight:600;font-size:12.5px;color:#0f6cbf;background:transparent;border:1px solid transparent;border-radius:4px;cursor:pointer;transition:all 0.2s ease;line-height:1.2;}',
+        '.spotaward-category-tab-btn:hover{background:#e8f0fe;color:#0c5697;}',
+        '.spotaward-category-tab-btn.is-active{background:#0f6cbf;color:#ffffff;border-color:#0f6cbf;box-shadow:0 2px 4px rgba(15,108,191,0.3);font-weight:700;}',
+        '.spotaward-tab-count-badge{display:inline-flex;align-items:center;justify-content:center;min-width:16px;height:16px;padding:0 4px;border-radius:8px;font-size:9.5px;font-weight:700;background:#0f6cbf;color:#fff;line-height:1;transition:all 0.2s ease;}',
+        '.spotaward-category-tab-btn.is-active .spotaward-tab-count-badge{background:#ffffff;color:#0f6cbf;}',
+        '#fitem_id_awardcategoriesui{display:none!important;margin:0!important;padding:0!important;}',
+        '#spotaward-award-fields .form-group.row.fitem{margin:0 0 10px;}',
+        '#spotaward-award-fields .col-form-label{margin-top:0;margin-bottom:3px;padding-top:0;font-size:13px;font-weight:600;}',
+        '.spotaward-category-pane{animation:spotawardFadeIn 0.2s ease;}',
+        '@keyframes spotawardFadeIn{from{opacity:0;transform:translateY(2px);}to{opacity:1;transform:translateY(0);}}',
         '@media (max-width: 767px){.spotaward-report-backdrop{padding:8px;}.spotaward-report-header,.spotaward-report-body{padding:14px;}}'
     ].join('');
     document.head.appendChild(style);
@@ -587,6 +622,9 @@ function local_spotaward_nomination_form_js(moodle_url $ajaxurl): string {
             setSuggestedValues: setSuggestedValues,
             setLocked: setLocked,
             setSelectedValues: setSelectedValues,
+            getSelectedValues: function () {
+                return selected.map(function(s) { return String(s.value); });
+            },
             getNativeSelect: function () { return nativeSelect; }
         };
     }
@@ -650,6 +688,10 @@ function local_spotaward_nomination_form_js(moodle_url $ajaxurl): string {
 
             return false;
         });
+
+        if (courseText.indexOf('ADVANCED C') !== -1 || courseText.indexOf('ADVC102') !== -1) {
+            mappedModule = 'Advanced C - Mid';
+        }
 
         moduleEl.value = mappedModule;
     }
@@ -736,6 +778,11 @@ function local_spotaward_nomination_form_js(moodle_url $ajaxurl): string {
         var container = document.getElementById('spotaward-award-fields');
         if (!container) return;
 
+        var tabsSlot = document.getElementById('spotaward-category-tabs-slot');
+        if (tabsSlot) {
+            tabsSlot.innerHTML = '';
+        }
+
         /* remove previously built fields */
         Object.keys(awardWidgets).forEach(function(fn) {
             var old = nominationForm ? nominationForm.querySelector('[name="' + fn + '"]') : null;
@@ -752,7 +799,133 @@ function local_spotaward_nomination_form_js(moodle_url $ajaxurl): string {
 
         var fieldmap = {};
 
-        categories.forEach(function(category, index) {
+        var isAdvancedC = categories.some(function(c) {
+            return c.indexOf('Mid C') !== -1;
+        });
+
+        var midCPane = null;
+        var endCPane = null;
+        var midCTabBtn = null;
+        var endCTabBtn = null;
+        var midCBadge = null;
+        var endCBadge = null;
+
+        function updateTabBadges() {
+            if (!isAdvancedC) return;
+            var midCount = 0;
+            var endCount = 0;
+            Object.keys(fieldmap).forEach(function(fn) {
+                var cat = fieldmap[fn];
+                var widget = awardWidgets[fn];
+                if (!widget || typeof widget.getSelectedValues !== 'function') return;
+                var vals = widget.getSelectedValues();
+                if (cat.indexOf('Mid C') !== -1) {
+                    midCount += vals.length;
+                } else {
+                    endCount += vals.length;
+                }
+            });
+
+            if (midCBadge) {
+                midCBadge.textContent = String(midCount);
+                midCBadge.style.display = midCount > 0 ? '' : 'none';
+            }
+            if (endCBadge) {
+                endCBadge.textContent = String(endCount);
+                endCBadge.style.display = endCount > 0 ? '' : 'none';
+            }
+        }
+
+        if (isAdvancedC) {
+            var colon = document.createElement('span');
+            colon.className = 'spotaward-header-colon';
+            colon.textContent = ':';
+
+            var tabNav = document.createElement('div');
+            tabNav.className = 'spotaward-category-tabs-nav d-inline-flex align-items-center';
+            tabNav.setAttribute('role', 'tablist');
+
+            midCTabBtn = document.createElement('button');
+            midCTabBtn.type = 'button';
+            midCTabBtn.className = 'spotaward-category-tab-btn is-active';
+            midCTabBtn.setAttribute('data-tab-target', 'midc');
+            midCTabBtn.setAttribute('role', 'tab');
+            midCTabBtn.setAttribute('aria-selected', 'true');
+            midCTabBtn.innerHTML = '<span>Mid C</span> <span class="spotaward-tab-count-badge" data-tab-badge="midc" style="display:none;">0</span>';
+
+            endCTabBtn = document.createElement('button');
+            endCTabBtn.type = 'button';
+            endCTabBtn.className = 'spotaward-category-tab-btn';
+            endCTabBtn.setAttribute('data-tab-target', 'endc');
+            endCTabBtn.setAttribute('role', 'tab');
+            endCTabBtn.setAttribute('aria-selected', 'false');
+            endCTabBtn.innerHTML = '<span>End C</span> <span class="spotaward-tab-count-badge" data-tab-badge="endc" style="display:none;">0</span>';
+
+            tabNav.appendChild(midCTabBtn);
+            tabNav.appendChild(endCTabBtn);
+
+            if (tabsSlot) {
+                tabsSlot.appendChild(colon);
+                tabsSlot.appendChild(tabNav);
+            } else {
+                container.appendChild(tabNav);
+            }
+
+            midCBadge = midCTabBtn.querySelector('[data-tab-badge="midc"]');
+            endCBadge = endCTabBtn.querySelector('[data-tab-badge="endc"]');
+
+            midCPane = document.createElement('div');
+            midCPane.className = 'spotaward-category-pane spotaward-category-pane-midc';
+            midCPane.setAttribute('data-pane', 'midc');
+
+            endCPane = document.createElement('div');
+            endCPane.className = 'spotaward-category-pane spotaward-category-pane-endc';
+            endCPane.setAttribute('data-pane', 'endc');
+            endCPane.style.display = 'none';
+
+            container.appendChild(midCPane);
+            container.appendChild(endCPane);
+
+            function switchTab(target) {
+                if (target === 'midc') {
+                    midCTabBtn.classList.add('is-active');
+                    midCTabBtn.setAttribute('aria-selected', 'true');
+                    endCTabBtn.classList.remove('is-active');
+                    endCTabBtn.setAttribute('aria-selected', 'false');
+                    midCPane.style.display = '';
+                    endCPane.style.display = 'none';
+                    if (moduleEl) {
+                        moduleEl.value = 'Advanced C - Mid';
+                    }
+                } else {
+                    endCTabBtn.classList.add('is-active');
+                    endCTabBtn.setAttribute('aria-selected', 'true');
+                    midCTabBtn.classList.remove('is-active');
+                    midCTabBtn.setAttribute('aria-selected', 'false');
+                    endCPane.style.display = '';
+                    midCPane.style.display = 'none';
+                    if (moduleEl) {
+                        moduleEl.value = 'Advanced C - End';
+                    }
+                }
+            }
+
+            midCTabBtn.addEventListener('click', function(e) {
+                e.preventDefault();
+                switchTab('midc');
+            });
+
+            endCTabBtn.addEventListener('click', function(e) {
+                e.preventDefault();
+                switchTab('endc');
+            });
+
+            if (moduleEl) {
+                moduleEl.value = 'Advanced C - Mid';
+            }
+        }
+
+        function createField(category, index, targetContainer) {
             var fieldname = 'awardstudents_' + index;
             fieldmap[fieldname] = category;
             var suggestedIds = (suggestions[category] || []).map(function(id) {
@@ -761,7 +934,7 @@ function local_spotaward_nomination_form_js(moodle_url $ajaxurl): string {
 
             var label = document.createElement('label');
             label.textContent = category;
-            label.className = 'col-form-label d-block mt-2';
+            label.className = 'col-form-label d-block mt-1 mb-1';
 
             var sel = document.createElement('select');
             sel.name = fieldname + '[]';
@@ -781,13 +954,35 @@ function local_spotaward_nomination_form_js(moodle_url $ajaxurl): string {
             var wrap = document.createElement('div');
             wrap.className = 'form-group row fitem';
             wrap.appendChild(label);
-
             wrap.appendChild(sel);
-            container.appendChild(wrap);
+            targetContainer.appendChild(wrap);
 
-            awardWidgets[fieldname] = makeWidget(sel, { multiple: true, placeholder: '$strSelStudents' });
-            awardWidgets[fieldname].setSuggestedValues(suggestedIds);
+            var w = makeWidget(sel, { multiple: true, placeholder: '$strSelStudents' });
+            w.setSuggestedValues(suggestedIds);
+            awardWidgets[fieldname] = w;
+
+            if (isAdvancedC) {
+                sel.addEventListener('change', function() {
+                    updateTabBadges();
+                });
+            }
+        }
+
+        categories.forEach(function(category, index) {
+            if (isAdvancedC) {
+                if (category.indexOf('Mid C') !== -1) {
+                    createField(category, index, midCPane);
+                } else {
+                    createField(category, index, endCPane);
+                }
+            } else {
+                createField(category, index, container);
+            }
         });
+
+        if (isAdvancedC) {
+            updateTabBadges();
+        }
 
         if (awardFieldMapEl) {
             awardFieldMapEl.value = JSON.stringify(fieldmap);
@@ -807,7 +1002,8 @@ function local_spotaward_nomination_form_js(moodle_url $ajaxurl): string {
             return;
         }
 
-        var url = '$ajaxUrl' + '?courseid=' + encodeURIComponent(courseid);
+        var sesskey = (window.M && M.cfg && M.cfg.sesskey) || '$sesskey';
+        var url = '$ajaxUrl' + '?courseid=' + encodeURIComponent(courseid) + '&sesskey=' + encodeURIComponent(sesskey);
 
         if (pmWidget) pmWidget.setLoading(true);
         if (maacWidget) maacWidget.setLoading(true);
@@ -822,6 +1018,9 @@ function local_spotaward_nomination_form_js(moodle_url $ajaxurl): string {
                 if (maacWidget) maacWidget.setLoading(false);
                 if (onLoaded) onLoaded(null);
                 return;
+            }
+            if (data.error && window.console && console.warn) {
+                console.warn('Spot Award course options: ' + data.error);
             }
 
             var pmItems = (data.programmanagers || []).map(function(p) {
@@ -916,8 +1115,14 @@ function local_spotaward_nomination_form_js(moodle_url $ajaxurl): string {
             if (!data) return;
             if (pmWidget && draftPmid !== '0') pmWidget.setSelectedValues([draftPmid]);
             if (maacWidget && draftMaacid !== '0') maacWidget.setSelectedValues([draftMaacid]);
-            /* restore award allocations */
+            var hasEndAwards = false;
+            var hasMidAwards = false;
             Object.keys(draftPayload).forEach(function(category) {
+                if (category.indexOf('Mid C') !== -1) {
+                    hasMidAwards = true;
+                } else {
+                    hasEndAwards = true;
+                }
                 var studentids = draftPayload[category];
                 /* find which fieldname maps to this category */
                 var fieldmap = {};
@@ -932,6 +1137,13 @@ function local_spotaward_nomination_form_js(moodle_url $ajaxurl): string {
                     }
                 });
             });
+            var draftModulename = draftForm.getAttribute('data-draft-modulename') || '';
+            if (draftModulename.indexOf('End') !== -1 || (hasEndAwards && !hasMidAwards)) {
+                var endTab = document.querySelector('.spotaward-category-tab-btn[data-tab-target="endc"]');
+                if (endTab) {
+                    endTab.click();
+                }
+            }
         });
     } else {
         enhanceAwardStudentSelects();
@@ -956,6 +1168,16 @@ function local_spotaward_require_table_tools(): void {
 
     $PAGE->requires->js_call_amd('local_spotaward/table_tools', 'init');
     $required = true;
+}
+
+/**
+ * Safely get the localized status label.
+ *
+ * @param string|null $status
+ * @return string
+ */
+function local_spotaward_get_status_label(?string $status): string {
+    return \local_spotaward\local\constants::status_label($status);
 }
 
 /**

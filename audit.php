@@ -1,5 +1,26 @@
 <?php
 // This file is part of Moodle - http://moodle.org/
+//
+// Moodle is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Moodle is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
+
+/**
+ * Audit log page.
+ *
+ * @package   local_spotaward
+ * @copyright 2026
+ * @license   http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
+ */
 
 require_once(__DIR__ . '/../../config.php');
 require_once(__DIR__ . '/lib.php');
@@ -63,7 +84,7 @@ if ($auditaction !== '') {
     require_sesskey();
 
     if ($auditaction === 'deleteselected') {
-        $deletedcount = api::delete_audit_log_records($selectedauditids);
+        $deletedcount = api::delete_audit_log_records($selectedauditids, (int)$USER->id);
         if ($deletedcount > 0) {
             redirect($baseurl, get_string('auditlogdeletedselected', 'local_spotaward', $deletedcount), 0,
                 \core\output\notification::NOTIFY_SUCCESS);
@@ -74,7 +95,18 @@ if ($auditaction !== '') {
     }
 
     if ($auditaction === 'deleteall') {
-        $deletedcount = api::delete_all_audit_log_records();
+        // Bug #10 fix: A JS confirm() dialog is bypassable by a crafted POST.
+        // Require the admin to explicitly type the confirmation token server-side.
+        $confirmtoken = optional_param('confirmdeleteall', '', PARAM_TEXT);
+        $expectedtoken = get_string('auditlogdeletealltoken', 'local_spotaward');
+        if (trim($confirmtoken) !== $expectedtoken) {
+            redirect($baseurl,
+                get_string('auditlogdeleteallconfirm', 'local_spotaward'),
+                null,
+                \core\output\notification::NOTIFY_WARNING
+            );
+        }
+        $deletedcount = api::delete_all_audit_log_records((int)$USER->id);
         redirect($baseurl, get_string('auditlogdeletedall', 'local_spotaward', $deletedcount), 0,
             \core\output\notification::NOTIFY_SUCCESS);
     }
@@ -271,13 +303,82 @@ if (empty($rows)) {
         'onclick' => "return confirm('" . addslashes_js(get_string('auditlogconfirmdeleteselected', 'local_spotaward')) . "');",
     ]);
     echo html_writer::tag('button', get_string('deleteallauditlogs', 'local_spotaward'), [
-        'type' => 'submit',
-        'name' => 'auditaction',
-        'value' => 'deleteall',
-        'class' => 'btn btn-outline-danger',
-        'onclick' => "return confirm('" . addslashes_js(get_string('auditlogconfirmdeleteall', 'local_spotaward')) . "');",
+        'type'    => 'button',
+        'class'   => 'btn btn-outline-danger',
+        'data-bs-toggle' => 'modal',
+        'data-bs-target' => '#spotaward-deleteall-modal',
+        'onclick' => 'document.getElementById("spotaward-deleteall-modal").style.display="flex";return false;',
     ]);
     echo html_writer::end_div();
+
+    // Bug #10 fix: Inline confirmation modal requiring the admin to type "DELETE".
+    // This replaces the bypassable JS-only confirm() dialog.
+    $deletealltoken = get_string('auditlogdeletealltoken', 'local_spotaward');
+    $deleteallprompt = get_string('auditlogdeleteallconfirm', 'local_spotaward');
+    echo html_writer::div(
+        html_writer::div(
+            html_writer::div(
+                html_writer::tag('h5', get_string('deleteallauditlogs', 'local_spotaward'), ['class' => 'modal-title']) .
+                html_writer::empty_tag('input', ['type' => 'hidden', 'id' => 'spotaward-modal-sesskey', 'value' => sesskey()]),
+                'modal-header'
+            ) .
+            html_writer::div(
+                html_writer::tag('p', $deleteallprompt) .
+                html_writer::label($deleteallprompt, 'spotaward-deleteall-input', false, ['class' => 'sr-only']) .
+                html_writer::empty_tag('input', [
+                    'type'        => 'text',
+                    'id'          => 'spotaward-deleteall-input',
+                    'class'       => 'form-control',
+                    'placeholder' => $deletealltoken,
+                    'autocomplete' => 'off',
+                ]),
+                'modal-body'
+            ) .
+            html_writer::div(
+                html_writer::tag('button', get_string('cancel'), [
+                    'type'    => 'button',
+                    'class'   => 'btn btn-secondary',
+                    'onclick' => 'document.getElementById("spotaward-deleteall-modal").style.display="none";',
+                ]) . ' ' .
+                html_writer::tag('button', get_string('deleteallauditlogs', 'local_spotaward'), [
+                    'type'    => 'button',
+                    'id'      => 'spotaward-deleteall-confirm-btn',
+                    'class'   => 'btn btn-danger',
+                    'onclick' => 'localSpotawardSubmitDeleteAll();',
+                ]),
+                'modal-footer'
+            ),
+            'modal-content'
+        ),
+        'modal-dialog',
+        ['id' => 'spotaward-deleteall-modal',
+         'role' => 'dialog',
+         'aria-modal' => 'true',
+         'style' => 'display:none;position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,.5);align-items:center;justify-content:center;']
+    );
+
+    echo html_writer::script("
+function localSpotawardSubmitDeleteAll() {
+    var input = document.getElementById('spotaward-deleteall-input');
+    var expected = " . json_encode($deletealltoken) . ";
+    if (!input || input.value.trim() !== expected) {
+        input.classList.add('is-invalid');
+        return;
+    }
+    var form = document.getElementById('spotaward-audit-delete-form');
+    var hidden = document.createElement('input');
+    hidden.type = 'hidden';
+    hidden.name = 'confirmdeleteall';
+    hidden.value = input.value.trim();
+    form.appendChild(hidden);
+    var action = document.createElement('input');
+    action.type = 'hidden';
+    action.name = 'auditaction';
+    action.value = 'deleteall';
+    form.appendChild(action);
+    form.submit();
+}
+");
 
     echo local_spotaward_render_data_table($columns, $rows, [
         'id' => 'spotaward-audit-log-table',

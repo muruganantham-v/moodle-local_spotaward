@@ -1,5 +1,26 @@
 <?php
 // This file is part of Moodle - http://moodle.org/
+//
+// Moodle is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Moodle is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
+
+/**
+ * Certificate placeholder field mapping for Spot Award System.
+ *
+ * @package   local_spotaward
+ * @copyright 2026
+ * @license   http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
+ */
 
 namespace local_spotaward\local;
 
@@ -7,7 +28,7 @@ use stdClass;
 
 defined('MOODLE_INTERNAL') || die();
 
-class cert_field_map {
+final class cert_field_map {
 
     const CLASS_NAME = 'spotaward';
 
@@ -124,6 +145,23 @@ class cert_field_map {
         $replacements['{$COURSE->shortname}'] = $data['course_shortname'];
         $replacements['{course->fullname}'] = $data['course_name'];
         $replacements['{course->shortname}'] = $data['course_shortname'];
+
+        // Site information - all variations
+        global $SITE;
+        $sitename = format_string($SITE->fullname ?? '');
+        $siteshortname = format_string($SITE->shortname ?? '');
+        $replacements['{$SITE->fullname}'] = $sitename;
+        $replacements['{$site->fullname}'] = $sitename;
+        $replacements['{$SITE->shortname}'] = $siteshortname;
+        $replacements['{$site->shortname}'] = $siteshortname;
+        $replacements['{$SITE->summary}'] = $SITE->summary ?? '';
+        $replacements['{$site->summary}'] = $SITE->summary ?? '';
+        $replacements['{site->fullname}'] = $sitename;
+        $replacements['{site->shortname}'] = $siteshortname;
+        $replacements['{$SITE-&gt;fullname}'] = $sitename;
+        $replacements['{$site-&gt;fullname}'] = $sitename;
+        $replacements['{$SITE-&gt;shortname}'] = $siteshortname;
+        $replacements['{$site-&gt;shortname}'] = $siteshortname;
         
         // Certificate issue dates
         $replacements['{certificateissue->date}'] = $data['issued_date'];

@@ -1,5 +1,26 @@
 <?php
 // This file is part of Moodle - http://moodle.org/
+//
+// Moodle is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Moodle is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
+
+/**
+ * Domain constants for Spot Award System.
+ *
+ * @package   local_spotaward
+ * @copyright 2026
+ * @license   http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
+ */
 
 namespace local_spotaward\local;
 
@@ -37,6 +58,23 @@ final class constants {
     }
 
     /**
+     * Get human-readable status label.
+     *
+     * @param string|null $status
+     * @return string
+     */
+    public static function status_label(?string $status): string {
+        $status = trim((string)$status);
+        if ($status === '') {
+            $status = 'pending';
+        }
+        if (get_string_manager()->string_exists($status, 'local_spotaward')) {
+            return get_string($status, 'local_spotaward');
+        }
+        return ucfirst(str_replace('_', ' ', $status));
+    }
+
+    /**
      * Get role ID by shortname.
      *
      * @param string $shortname
@@ -62,6 +100,8 @@ final class constants {
     public static function modules(): array {
         return [
             'Linux Systems' => 'Linux Systems',
+            'Advanced C - Mid' => 'Advanced C - Mid',
+            'Advanced C - End' => 'Advanced C - End',
             'Advance C Programming' => 'Advance C Programming',
             'C++ Programming' => 'C++ Programming',
             'Data Structure and Algorithms (DSA)' => 'Data Structure and Algorithms (DSA)',
@@ -85,8 +125,8 @@ final class constants {
         return [
             'LINUX SYSTEMS' => 'Linux Systems',
             'LS101' => 'Linux Systems',
-            'ADVANCED C' => 'Advance C Programming',
-            'ADVC102' => 'Advance C Programming',
+            'ADVANCED C' => 'Advanced C - End',
+            'ADVC102' => 'Advanced C - End',
             'CPP103' => 'C++ Programming',
             'DATA STRUCTURES' => 'Data Structure and Algorithms (DSA)',
             'DS104' => 'Data Structure and Algorithms (DSA)',
@@ -241,14 +281,60 @@ final class constants {
     }
 
     /**
-     * Award categories for courses that include Mid C awards.
+     * Mid C award categories.
+     *
+     * @return array
+     */
+    public static function advanced_c_mid_categories(): array {
+        return [
+            'Enthusiastic Learner - Mid C' => 'Enthusiastic Learner - Mid C',
+            'Best Problem Solver - Mid C' => 'Best Problem Solver - Mid C',
+            'Fast Coder - Mid C' => 'Fast Coder - Mid C',
+            'Logical Thinker - Mid C' => 'Logical Thinker - Mid C',
+            'Perfect coder - Mid C' => 'Perfect coder - Mid C',
+            'Quiz Champion - Mid C' => 'Quiz Champion - Mid C',
+        ];
+    }
+
+    /**
+     * End C award categories.
+     *
+     * @return array
+     */
+    public static function advanced_c_end_categories(): array {
+        return [
+            'Perfect Attendance' => 'Perfect Attendance',
+            'Most Regular Student' => 'Most Regular Student',
+            'Top Performer - Module Test' => 'Top Performer - Module Test',
+            'Enthusiastic Learner - End of the Module' => 'Enthusiastic Learner - End of the Module',
+            'Project Enthusiast' => 'Project Enthusiast',
+            'Best Problem Solver - End of the Module' => 'Best Problem Solver - End of the Module',
+            'Logical Thinker - End of the Module' => 'Logical Thinker - End of the Module',
+            'Perfect coder - End of the Module' => 'Perfect coder - End of the Module',
+            'Quiz Champion - End of the Module' => 'Quiz Champion - End of the Module',
+        ];
+    }
+
+    /**
+     * Award categories for courses that include Mid C and End C awards.
      *
      * @return array
      */
     public static function advanced_c_award_categories(): array {
-        $categories = self::award_categories();
-        unset($categories['The \'15\'-er']);
-        return $categories;
+        return array_merge(self::advanced_c_mid_categories(), self::advanced_c_end_categories());
+    }
+
+    /**
+     * Whether a course is an Advanced C course.
+     *
+     * @param string $shortname
+     * @param string $fullname
+     * @return bool
+     */
+    public static function is_advanced_c_course(string $shortname, string $fullname): bool {
+        $shortname = \core_text::strtoupper(trim($shortname));
+        return ($shortname !== '' && \core_text::strpos($shortname, 'ADVC102') === 0) || 
+               \core_text::strpos(\core_text::strtoupper(trim($fullname)), 'ADVANCED C') !== false;
     }
 
     /**
@@ -296,9 +382,7 @@ final class constants {
      * @return array
      */
     public static function award_categories_for_course(string $shortname, string $fullname): array {
-        $shortname = \core_text::strtoupper(trim($shortname));
-        $isadvancedc = ($shortname !== '' && \core_text::strpos($shortname, 'ADVC102') === 0) || 
-                       \core_text::strpos(\core_text::strtoupper(trim($fullname)), 'ADVANCED C') !== false;
+        $isadvancedc = self::is_advanced_c_course($shortname, $fullname);
 
         if ($isadvancedc) {
             $categories = self::advanced_c_award_categories();

@@ -1,5 +1,26 @@
 <?php
 // This file is part of Moodle - http://moodle.org/
+//
+// Moodle is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Moodle is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
+
+/**
+ * DB upgrade steps for Spot Award System.
+ *
+ * @package   local_spotaward
+ * @copyright 2026
+ * @license   http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
+ */
 
 defined('MOODLE_INTERNAL') || die();
 
@@ -41,25 +62,25 @@ function xmldb_local_spotaward_upgrade($oldversion) {
             }
 
             $parts = preg_split('/\n\n/', $nomination->awarddescription);
-            $categoryMap = [];
+            $categorymap = [];
             
             foreach ($parts as $part) {
                 if (preg_match('/^(.+?):\s*(.*)$/s', $part, $matches)) {
-                    $categoryMap[$matches[1]] = $matches[2];
+                    $categorymap[$matches[1]] = $matches[2];
                 }
             }
 
             $items = $DB->get_records('spotaward_nomination_items', ['nominationid' => $nomination->id]);
             
-            if (!empty($items) && !empty($categoryMap)) {
-                $firstCategory = array_key_first($categoryMap);
-                $firstDesc = $categoryMap[$firstCategory];
+            if (!empty($items) && !empty($categorymap)) {
+                $firstcategory = array_key_first($categorymap);
+                $firstdesc = $categorymap[$firstcategory];
                 
                 foreach ($items as $item) {
                     $DB->update_record('spotaward_nomination_items', (object)[
                         'id' => $item->id,
-                        'awardcategory' => $firstCategory,
-                        'awarddescription' => $firstDesc,
+                        'awardcategory' => $firstcategory,
+                        'awarddescription' => $firstdesc,
                     ]);
                 }
             }
@@ -430,6 +451,101 @@ function xmldb_local_spotaward_upgrade($oldversion) {
         }
 
         upgrade_plugin_savepoint(true, 2026070801, 'local', 'spotaward');
+    }
+
+    if ($oldversion < 2026081900) {
+        $dbman = $DB->get_manager();
+        $table = new xmldb_table('spotaward_nominations');
+        $legacyindexes = [
+            new xmldb_index('nominator_idx', XMLDB_INDEX_NOTUNIQUE, ['nominatorid']),
+            new xmldb_index('programmanager_idx', XMLDB_INDEX_NOTUNIQUE, ['programmanagerid']),
+            new xmldb_index('maacexecutive_idx', XMLDB_INDEX_NOTUNIQUE, ['maacexecutiveid']),
+        ];
+        foreach ($legacyindexes as $legacyindex) {
+            if ($dbman->index_exists($table, $legacyindex)) {
+                $dbman->drop_index($table, $legacyindex);
+            }
+        }
+
+        $indexes = [
+            new xmldb_index('nominator_time_idx', XMLDB_INDEX_NOTUNIQUE, ['nominatorid', 'timecreated']),
+            new xmldb_index('pm_status_time_idx', XMLDB_INDEX_NOTUNIQUE,
+                ['programmanagerid', 'status', 'timecreated']),
+            new xmldb_index('maac_status_time_idx', XMLDB_INDEX_NOTUNIQUE,
+                ['maacexecutiveid', 'status', 'timecreated']),
+            new xmldb_index('adminshared_status_idx', XMLDB_INDEX_NOTUNIQUE, ['adminsharedtime', 'status']),
+        ];
+        foreach ($indexes as $index) {
+            if (!$dbman->index_exists($table, $index)) {
+                $dbman->add_index($table, $index);
+            }
+        }
+
+        upgrade_plugin_savepoint(true, 2026081900, 'local', 'spotaward');
+    }
+
+    if ($oldversion < 2026081901) {
+        // Move legacy system-context certificate files into their owning course
+        // contexts so standard backup/restore and course deletion include them.
+        $fs = get_file_storage();
+        $systemcontext = context_system::instance();
+        $files = $fs->get_area_files(
+            $systemcontext->id,
+            'local_spotaward',
+            'certificates',
+            false,
+            'id',
+            false
+        );
+        foreach ($files as $file) {
+            $nomination = $DB->get_record('spotaward_nominations',
+                ['id' => (int)$file->get_itemid()], 'id, courseid');
+            if (!$nomination) {
+                $file->delete();
+                continue;
+            }
+            $coursecontext = context_course::instance((int)$nomination->courseid, IGNORE_MISSING);
+            if (!$coursecontext) {
+                continue;
+            }
+            $record = [
+                'contextid' => $coursecontext->id,
+                'component' => 'local_spotaward',
+                'filearea' => 'certificates',
+                'itemid' => (int)$file->get_itemid(),
+                'filepath' => $file->get_filepath(),
+                'filename' => $file->get_filename(),
+                'timecreated' => $file->get_timecreated(),
+                'timemodified' => $file->get_timemodified(),
+            ];
+            if (!$fs->file_exists($record['contextid'], $record['component'], $record['filearea'],
+                    $record['itemid'], $record['filepath'], $record['filename'])) {
+                $fs->create_file_from_storedfile($record, $file);
+            }
+            $file->delete();
+        }
+
+        // Existing installations historically authorised configured roles by raw
+        // role ID. Seed explicit capabilities so CAP_PROHIBIT and normal Moodle
+        // permission inheritance are now authoritative.
+        update_capabilities('local_spotaward');
+        $rolecapabilities = [
+            [get_config('local_spotaward', 'nominator_role') ?: 'nominators', 'local/spotaward:nominate'],
+            [get_config('local_spotaward', 'program_manager_role') ?: 'programmanagers', 'local/spotaward:review'],
+            [get_config('local_spotaward', 'ss_team_role') ?: 'ssteam', 'local/spotaward:sstask'],
+            [get_config('local_spotaward', 'admin_role') ?: 'admin', 'local/spotaward:administer'],
+            [get_config('local_spotaward', 'manager_role') ?: 'manager', 'local/spotaward:viewreports'],
+            ['teacher', 'local/spotaward:nominate'],
+            ['editingteacher', 'local/spotaward:nominate'],
+        ];
+        foreach ($rolecapabilities as [$roleshortname, $capability]) {
+            $roleid = $DB->get_field('role', 'id', ['shortname' => $roleshortname]);
+            if ($roleid) {
+                assign_capability($capability, CAP_ALLOW, (int)$roleid, $systemcontext->id, true);
+            }
+        }
+
+        upgrade_plugin_savepoint(true, 2026081901, 'local', 'spotaward');
     }
 
     return true;
