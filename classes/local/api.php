@@ -6396,11 +6396,12 @@ final class api {
             );
         }
 
-        if (!empty($nomination->maacexecutiveid) && (int)$nomination->maacexecutiveid === $userid) {
-            return self::user_is_in_workflow_user_list(
-                $userid,
-                self::get_maac_executives_for_course((int)$nomination->courseid)
-            );
+        if (self::is_assigned_maac_executive($nomination, $userid)) {
+            return true;
+        }
+
+        if (self::is_ss_team($userid)) {
+            return true;
         }
 
         if (!empty($nomination->adminsharedtime) && self::is_admin($userid)) {
@@ -6466,11 +6467,12 @@ final class api {
             );
         }
 
-        if (!empty($nomination->maacexecutiveid) && (int)$nomination->maacexecutiveid === $userid) {
-            return self::user_is_in_workflow_user_list(
-                $userid,
-                self::get_maac_executives_for_course((int)$nomination->courseid)
-            );
+        if (self::is_assigned_maac_executive($nomination, $userid)) {
+            return true;
+        }
+
+        if (self::is_ss_team($userid)) {
+            return true;
         }
 
         if (!empty($nomination->adminsharedtime) && self::is_admin($userid)) {
