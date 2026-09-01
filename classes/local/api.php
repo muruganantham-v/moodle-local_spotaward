@@ -102,6 +102,11 @@ final class api {
      * @return bool
      */
     public static function user_can_see_menu(int $userid): bool {
+        $enabled = get_config('local_spotaward', 'menu');
+        if ($enabled !== false && empty($enabled)) {
+            return false;
+        }
+
         if (is_siteadmin($userid)) {
             return true;
         }
