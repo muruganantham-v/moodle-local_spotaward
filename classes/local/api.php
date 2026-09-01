@@ -3462,8 +3462,6 @@ final class api {
             $image = trim($matches[1], " \t\n\r\0\x0B'\"");
         } else if (preg_match('/(?:body|\.gjs-row|section|\.wrapper|\.background)[^{]*\{[^}]*background(?:-image)?\s*:\s*url\((.*?)\)/is', $combined, $matches)) {
             $image = trim($matches[1], " \t\n\r\0\x0B'\"");
-        } else if (preg_match('/background(?:-image)?\s*:\s*url\((.*?)\)/is', $combined, $matches)) {
-            $image = trim($matches[1], " \t\n\r\0\x0B'\"");
         }
 
         if ($image === '') {
