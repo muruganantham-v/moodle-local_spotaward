@@ -526,6 +526,7 @@ $string['csvdownloadnotallowed'] = 'You are not allowed to download CSV details 
 $string['invalidcourseid'] = 'Invalid course ID provided.';
 $string['invalidstatustransition'] = 'Invalid status transition requested.';
 $string['missingmaacexecutive'] = 'Selected MAAC Executive was not found.';
+$string['logsdeletenomatch'] = 'The confirmation text did not match. No audit log records were deleted.';
 $string['nominationitems'] = 'Nomination Items';
 $string['nominations'] = 'Nominations';
 $string['privacy:certificatefiles'] = 'Stored certificate PDF files issued to students.';
