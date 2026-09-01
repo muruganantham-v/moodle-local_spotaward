@@ -4838,7 +4838,10 @@ final class api {
         $now = time();
         $filename = 'Spot_Award_Admin_Certificates_' . userdate($now, '%Y%m%d_%H%M%S') . '.pdf';
 
-        // Record delivery timestamps.
+        // Generate PDF first so we only mark records as downloaded if generation succeeds.
+        $pdfcontent = self::generate_merged_nominations_certificates_pdf($nominationids);
+
+        // Record delivery timestamps only after successful PDF generation.
         [$insql, $params] = $DB->get_in_or_equal($nominationids, SQL_PARAMS_NAMED);
         $params['admindownloadedtime'] = $now;
         $params['admindownloadedby'] = $userid;
@@ -4851,8 +4854,9 @@ final class api {
               WHERE id $insql",
             $params
         );
-
-        $pdfcontent = self::generate_merged_nominations_certificates_pdf($nominationids);
+        foreach ($nominationids as $nid) {
+            unset(self::$nominationcache[(int)$nid]);
+        }
 
         while (ob_get_level()) {
             ob_end_clean();
