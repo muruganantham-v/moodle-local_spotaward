@@ -496,11 +496,9 @@ final class constants {
         return [
             'autography' => 'Autography',
             'rockybilly' => 'Rockybilly',
-            'moralana' => 'Moralana',
             'bastligaone' => 'Bastliga One',
             'signatie' => 'Signatie',
             'ronthelbrush' => 'Ronthel Brush',
-            'californiansignature' => 'Californian Signature',
             'gatewaysignature' => 'Gateway Signature',
             'jalliya' => 'Jalliya',
             'thesignature' => 'Thesignature',
@@ -528,11 +526,9 @@ final class constants {
         return [
             'autography' => 'Autography.ttf',
             'rockybilly' => 'Rockybilly.ttf',
-            'moralana' => 'Moralana DEMO.otf',
             'bastligaone' => 'Bastliga One.ttf',
             'signatie' => 'Signatie.ttf',
             'ronthelbrush' => 'Ronthel Brush DEMO.otf',
-            'californiansignature' => 'Californian Signature.otf',
             'gatewaysignature' => 'gateway.ttf',
             'jalliya' => 'Jalliya.ttf',
             'thesignature' => 'Thesignature.ttf',
