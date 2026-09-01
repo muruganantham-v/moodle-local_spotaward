@@ -68,6 +68,7 @@ fputcsv($out, [
     get_string('csv_student', 'local_spotaward'),
     get_string('csv_regnid', 'local_spotaward'),
     get_string('csv_awardcategory', 'local_spotaward'),
+    get_string('status', 'local_spotaward'),
     get_string('csv_approver', 'local_spotaward'),
     get_string('csv_issuedto', 'local_spotaward'),
     get_string('csv_comments', 'local_spotaward')
@@ -79,9 +80,7 @@ $issuedtoname = $maacexecutive ? fullname($maacexecutive) : '';
 $dateval = userdate($nomination->timecreated, get_string('strftimedatefullshort', 'langconfig'));
 
 foreach ($items as $item) {
-    if ($item->status === 'rejected') {
-        continue;
-    }
+    $statuslabel = local_spotaward_get_status_label($item->status ?? '');
     $row = [
         $slno,
         $item->email,
@@ -89,6 +88,7 @@ foreach ($items as $item) {
         fullname($item),
         $item->username,
         $item->awardcategory ?? '',
+        $statuslabel,
         $approvername,
         $issuedtoname,
         $item->rejectionreason ?? ''
