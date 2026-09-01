@@ -6359,10 +6359,10 @@ final class api {
             $newstatus = 'pending';
         } else if ($hasssteamprogress) {
             $newstatus = 'ssteamprogress';
-        } else if ($hasrejected) {
-            $newstatus = 'rejected';
         } else if ($hasclosed) {
             $newstatus = 'closed';
+        } else if ($hasrejected) {
+            $newstatus = 'rejected';
         } else {
             $newstatus = 'pending';
         }
