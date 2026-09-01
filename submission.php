@@ -448,7 +448,7 @@ if (in_array($nomination->status, ['ssteamprogress', 'closed'], true)) {
             get_string('downloadallcertificates', 'local_spotaward'),
             ['class' => 'btn btn-warning']
         );
-        if ($isssteam || $ismanager || is_siteadmin() || $isadmin) {
+        if ($isssteam || $canmanagerapprove) {
             $actionbuttons[] = html_writer::link(
                 new moodle_url('/local/spotaward/index.php', ['sharecertificates' => $id, 'sesskey' => sesskey()]),
                 get_string('sharecertificatestostudents', 'local_spotaward'),
