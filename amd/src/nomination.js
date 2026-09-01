@@ -144,7 +144,7 @@ define([], function() {
                 var state = collectFormState();
                 var hasContent = hasMeaningfulContent(state);
                 var canClear = hasRecoverableState || dirty || hasContent;
-                var canSubmit = hasRecoverableState && !dirty;
+                var canSubmit = hasRecoverableState || hasContent;
                 
                 if (clearBtn) {
                     clearBtn.disabled = !canClear;
