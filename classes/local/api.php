@@ -2399,6 +2399,8 @@ final class api {
                     false
                 );
                 $sentcount++;
+            } catch (\Throwable $e) {
+                debugging('Failed sharing certificate for student ' . $student->id . ': ' . $e->getMessage(), DEBUG_DEVELOPER);
             } finally {
                 // Bug #12 fix: log failures instead of silently ignoring them.
                 self::safe_unlink($temppath);
@@ -2481,6 +2483,8 @@ final class api {
                     false
                 );
                 $sentcount++;
+            } catch (\Throwable $e) {
+                debugging('Failed sharing certificate for student ' . $student->id . ': ' . $e->getMessage(), DEBUG_DEVELOPER);
             } finally {
                 self::safe_unlink($temppath);
             }
