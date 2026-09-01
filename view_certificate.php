@@ -40,13 +40,27 @@ if (!in_array($nomination->status, ['ssteamprogress', 'closed'], true)) {
 }
 
 require_once(__DIR__ . '/classes/local/api.php');
-local_spotaward\local\api::require_nomination_access($nomination, $USER->id);
 
-$cancertificateaccess = is_siteadmin() || local_spotaward\local\api::is_manager($USER->id) ||
-    local_spotaward\local\api::is_ss_team($USER->id) ||
-    local_spotaward\local\api::is_assigned_maac_executive($nomination, (int)$USER->id);
-if (!$cancertificateaccess) {
-    throw new moodle_exception('notauthorised', 'local_spotaward');
+$isowncertificate = false;
+if ($userid > 0 && (int)$userid === (int)$USER->id) {
+    $itemparams = ['nominationid' => $nominationid, 'studentid' => (int)$USER->id];
+    if ($itemid > 0) {
+        $itemparams['id'] = $itemid;
+    }
+    if ($DB->record_exists('spotaward_nomination_items', $itemparams)) {
+        $isowncertificate = true;
+    }
+}
+
+if (!$isowncertificate) {
+    local_spotaward\local\api::require_nomination_access($nomination, $USER->id);
+
+    $cancertificateaccess = is_siteadmin() || local_spotaward\local\api::is_manager($USER->id) ||
+        local_spotaward\local\api::is_ss_team($USER->id) ||
+        local_spotaward\local\api::is_assigned_maac_executive($nomination, (int)$USER->id);
+    if (!$cancertificateaccess) {
+        throw new moodle_exception('notauthorised', 'local_spotaward');
+    }
 }
 
 local_spotaward\local\api::ensure_nomination_certificates_generated($nominationid);
