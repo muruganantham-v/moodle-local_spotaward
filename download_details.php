@@ -40,6 +40,9 @@ $nominator = core_user::get_user($nomination->nominatorid);
 $programmanager = core_user::get_user($nomination->programmanagerid);
 $maacexecutive = !empty($nomination->maacexecutiveid) ? core_user::get_user($nomination->maacexecutiveid) : null;
 $items = api::get_nomination_items($id);
+$items = array_values(array_filter($items, function($item) {
+    return (string)$item->status !== 'rejected';
+}));
 if (empty($items)) {
     throw new moodle_exception('invalidparameter');
 }
