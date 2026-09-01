@@ -1527,36 +1527,48 @@ final class api {
     }
 
     /**
-     * Get active Admin users from the configured Admin role.
+     * Get active Admin users from the configured Admin role, falling back to site admins.
      *
      * @return array
      */
     private static function get_admin_users(): array {
         global $DB;
 
+        $users = [];
         $roleid = constants::admin_roleid();
-        if ($roleid <= 0) {
-            return [];
+        if ($roleid > 0) {
+            $systemcontextid = context_system::instance()->id;
+            $sql = "SELECT DISTINCT u.id, u.firstname, u.lastname, u.email
+                      FROM {user} u
+                      JOIN {role_assignments} ra ON ra.userid = u.id
+                     WHERE u.deleted = 0
+                       AND u.suspended = 0
+                       AND u.email <> ''
+                       AND ra.roleid = :roleid
+                       AND ra.contextid = :contextid
+                  ORDER BY u.firstname ASC, u.lastname ASC";
+
+            $records = array_values($DB->get_records_sql($sql, [
+                'roleid' => $roleid,
+                'contextid' => $systemcontextid,
+            ]));
+            $users = array_values(array_filter($records, static function($user): bool {
+                return has_capability('local/spotaward:administer', context_system::instance(), (int)$user->id);
+            }));
         }
 
-        $systemcontextid = context_system::instance()->id;
-        $sql = "SELECT DISTINCT u.id, u.firstname, u.lastname, u.email
-                  FROM {user} u
-                  JOIN {role_assignments} ra ON ra.userid = u.id
-                 WHERE u.deleted = 0
-                   AND u.suspended = 0
-                   AND u.email <> ''
-                   AND ra.roleid = :roleid
-                   AND ra.contextid = :contextid
-              ORDER BY u.firstname ASC, u.lastname ASC";
+        // Fallback: If no users are assigned to the configured admin role (e.g. fresh upgrade),
+        // fall back to Moodle's active Site Administrators to prevent crashes.
+        if (empty($users)) {
+            $admins = get_admins();
+            foreach ($admins as $admin) {
+                if (empty($admin->deleted) && empty($admin->suspended) && !empty($admin->email)) {
+                    $users[] = $admin;
+                }
+            }
+        }
 
-        $users = array_values($DB->get_records_sql($sql, [
-            'roleid' => $roleid,
-            'contextid' => $systemcontextid,
-        ]));
-        return array_values(array_filter($users, static function($user): bool {
-            return has_capability('local/spotaward:administer', context_system::instance(), (int)$user->id);
-        }));
+        return $users;
     }
 
     /**
