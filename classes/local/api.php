@@ -3557,80 +3557,6 @@ final class api {
         return $merged;
     }
 
-    /**
-     * Merge multiple PDF files on disk to a temporary file path.
-     *
-     * @param array $pdfpaths
-     * @param string $outputfilename
-     * @return string
-     */
-    public static function merge_pdf_files_to_temp_path(array $pdfpaths, string $outputfilename = 'certificates.pdf'): string {
-        global $CFG;
-
-        $pdfpaths = array_values(array_filter($pdfpaths, function($path) {
-            return is_string($path) && is_file($path);
-        }));
-
-        if (empty($pdfpaths)) {
-            return '';
-        }
-
-        require_once(__DIR__ . '/../../../../lib/tcpdf/tcpdf.php');
-        require_once(__DIR__ . '/../../../../mod/certificatebeautiful/classes/pdf/vendor/autoload.php');
-
-        check_dir_exists($CFG->tempdir . '/spotaward_merge_pdf');
-        $tempdir = make_temp_directory('spotaward_merge_pdf');
-        $outputpath = tempnam($tempdir, 'merged_');
-
-        $pdf = new \setasign\Fpdi\Tcpdf\Fpdi('L', 'mm', 'A4', true, 'UTF-8', false);
-        $pdf->setPrintHeader(false);
-        $pdf->setPrintFooter(false);
-        $pdf->SetMargins(0, 0, 0);
-        $pdf->SetAutoPageBreak(false, 0);
-        $pdf->setCompression(true);
-
-        foreach ($pdfpaths as $temppath) {
-            $pagecount = $pdf->setSourceFile($temppath);
-            for ($page = 1; $page <= $pagecount; $page++) {
-                $templateid = $pdf->importPage($page);
-                $size = $pdf->getTemplateSize($templateid);
-
-                $orientation = ($size['width'] > $size['height']) ? 'L' : 'P';
-                $pdf->AddPage($orientation, [$size['width'], $size['height']]);
-                $pdf->useTemplate($templateid, 0, 0, $size['width'], $size['height'], true);
-            }
-        }
-
-        $pdf->Output($outputpath, 'F');
-        return $outputpath;
-    }
-
-    /**
-     * Merge multiple stored files to a temporary file path.
-     *
-     * @param array $files
-     * @param string $outputfilename
-     * @return string
-     */
-    public static function merge_stored_pdf_files_to_temp_path(array $files, string $outputfilename = 'certificates.pdf'): string {
-        global $CFG;
-        $tempdir = make_temp_directory('spotaward_merge_temp');
-        $paths = [];
-        foreach ($files as $i => $file) {
-            $path = $tempdir . '/file_' . $i . '.pdf';
-            $file->copy_content_to($path);
-            $paths[] = $path;
-        }
-        try {
-            return self::merge_pdf_files_to_temp_path($paths, $outputfilename);
-        } finally {
-            foreach ($paths as $path) {
-                if (is_file($path)) {
-                    @unlink($path);
-                }
-            }
-        }
-    }
 
     /**
      * Load a Beautiful Certificate template model.
@@ -6676,13 +6602,6 @@ final class api {
         if (!in_array($status, $allowed, true)) {
             throw new moodle_exception('invalidstatustransition', 'local_spotaward');
         }
-
-        $item->status = $status;
-        if ($reason !== null) {
-            $item->rejectionreason = $reason;
-        }
-        $item->reviewedby = $actorid;
-        $item->timereviewed = time();
 
         $item->status = $status;
         if ($reason !== null) {
