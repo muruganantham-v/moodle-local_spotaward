@@ -305,64 +305,110 @@ if (empty($rows)) {
     echo html_writer::tag('button', get_string('deleteallauditlogs', 'local_spotaward'), [
         'type'    => 'button',
         'class'   => 'btn btn-outline-danger',
-        'data-bs-toggle' => 'modal',
-        'data-bs-target' => '#spotaward-deleteall-modal',
-        'onclick' => 'document.getElementById("spotaward-deleteall-modal").style.display="flex";return false;',
+        'onclick' => 'localSpotawardOpenDeleteAll(); return false;',
     ]);
     echo html_writer::end_div();
 
-    // Bug #10 fix: Inline confirmation modal requiring the admin to type "DELETE".
-    // This replaces the bypassable JS-only confirm() dialog.
     $deletealltoken = get_string('auditlogdeletealltoken', 'local_spotaward');
     $deleteallprompt = get_string('auditlogdeleteallconfirm', 'local_spotaward');
-    echo html_writer::div(
-        html_writer::div(
-            html_writer::div(
-                html_writer::tag('h5', get_string('deleteallauditlogs', 'local_spotaward'), ['class' => 'modal-title']) .
-                html_writer::empty_tag('input', ['type' => 'hidden', 'id' => 'spotaward-modal-sesskey', 'value' => sesskey()]),
-                'modal-header'
-            ) .
-            html_writer::div(
-                html_writer::tag('p', $deleteallprompt) .
-                html_writer::label($deleteallprompt, 'spotaward-deleteall-input', false, ['class' => 'sr-only']) .
-                html_writer::empty_tag('input', [
-                    'type'        => 'text',
-                    'id'          => 'spotaward-deleteall-input',
-                    'class'       => 'form-control',
-                    'placeholder' => $deletealltoken,
-                    'autocomplete' => 'off',
-                ]),
-                'modal-body'
-            ) .
-            html_writer::div(
-                html_writer::tag('button', get_string('cancel'), [
-                    'type'    => 'button',
-                    'class'   => 'btn btn-secondary',
-                    'onclick' => 'document.getElementById("spotaward-deleteall-modal").style.display="none";',
-                ]) . ' ' .
-                html_writer::tag('button', get_string('deleteallauditlogs', 'local_spotaward'), [
-                    'type'    => 'button',
-                    'id'      => 'spotaward-deleteall-confirm-btn',
-                    'class'   => 'btn btn-danger',
-                    'onclick' => 'localSpotawardSubmitDeleteAll();',
-                ]),
-                'modal-footer'
-            ),
-            'modal-content'
-        ),
-        'modal-dialog',
-        ['id' => 'spotaward-deleteall-modal',
-         'role' => 'dialog',
-         'aria-modal' => 'true',
-         'style' => 'display:none;position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,.5);align-items:center;justify-content:center;']
-    );
+
+    echo html_writer::start_div('spotaward-report-backdrop', [
+        'id' => 'spotaward-deleteall-modal',
+        'role' => 'dialog',
+        'aria-modal' => 'true',
+        'aria-labelledby' => 'spotaward-deleteall-title',
+    ]);
+    echo html_writer::start_div('spotaward-report-modal', ['style' => 'max-width: 500px;']);
+
+    // Header.
+    echo html_writer::start_div('spotaward-report-header');
+    echo html_writer::tag('h3', get_string('deleteallauditlogs', 'local_spotaward'), [
+        'class' => 'spotaward-report-title text-danger',
+        'id' => 'spotaward-deleteall-title',
+    ]);
+    echo html_writer::tag('button', '&times;', [
+        'type' => 'button',
+        'class' => 'spotaward-report-close',
+        'onclick' => 'localSpotawardCloseDeleteAll();',
+        'aria-label' => get_string('closebuttontitle'),
+    ]);
+    echo html_writer::end_div();
+
+    // Body.
+    echo html_writer::start_div('spotaward-report-body');
+    echo html_writer::tag('p', $deleteallprompt, ['class' => 'mb-2 font-weight-bold']);
+    echo html_writer::tag('p', 'To confirm, please type <strong class="badge badge-danger text-uppercase px-2 py-1" style="font-size:0.9rem;letter-spacing:1px;">' . s($deletealltoken) . '</strong> below:', ['class' => 'text-muted small mb-3']);
+    echo html_writer::label($deleteallprompt, 'spotaward-deleteall-input', false, ['class' => 'sr-only']);
+    echo html_writer::empty_tag('input', [
+        'type' => 'text',
+        'id' => 'spotaward-deleteall-input',
+        'class' => 'form-control form-control-lg text-center font-weight-bold mb-2',
+        'placeholder' => $deletealltoken,
+        'autocomplete' => 'off',
+        'style' => 'letter-spacing: 2px;',
+    ]);
+    echo html_writer::div(get_string('logsdeletenomatch', 'local_spotaward'), 'text-danger small text-center mb-3 font-weight-bold', [
+        'id' => 'spotaward-deleteall-feedback',
+        'style' => 'display:none;',
+    ]);
+
+    // Action buttons.
+    echo html_writer::start_div('d-flex justify-content-end gap-2 mt-3');
+    echo html_writer::tag('button', get_string('cancel'), [
+        'type' => 'button',
+        'class' => 'btn btn-secondary mr-2',
+        'onclick' => 'localSpotawardCloseDeleteAll();',
+    ]);
+    echo html_writer::tag('button', get_string('deleteallauditlogs', 'local_spotaward'), [
+        'type' => 'button',
+        'id' => 'spotaward-deleteall-confirm-btn',
+        'class' => 'btn btn-danger',
+        'onclick' => 'localSpotawardSubmitDeleteAll();',
+    ]);
+    echo html_writer::end_div();
+
+    echo html_writer::end_div(); // .spotaward-report-body
+    echo html_writer::end_div(); // .spotaward-report-modal
+    echo html_writer::end_div(); // .spotaward-report-backdrop
 
     echo html_writer::script("
+function localSpotawardOpenDeleteAll() {
+    var modal = document.getElementById('spotaward-deleteall-modal');
+    var input = document.getElementById('spotaward-deleteall-input');
+    var feedback = document.getElementById('spotaward-deleteall-feedback');
+    if (!modal) return;
+    if (input) {
+        input.value = '';
+        input.classList.remove('is-invalid');
+    }
+    if (feedback) {
+        feedback.style.display = 'none';
+    }
+    modal.classList.add('is-open');
+    if (input) {
+        setTimeout(function() { input.focus(); }, 50);
+    }
+}
+
+function localSpotawardCloseDeleteAll() {
+    var modal = document.getElementById('spotaward-deleteall-modal');
+    if (modal) {
+        modal.classList.remove('is-open');
+    }
+}
+
 function localSpotawardSubmitDeleteAll() {
     var input = document.getElementById('spotaward-deleteall-input');
+    var feedback = document.getElementById('spotaward-deleteall-feedback');
     var expected = " . json_encode($deletealltoken) . ";
     if (!input || input.value.trim() !== expected) {
-        input.classList.add('is-invalid');
+        if (input) {
+            input.classList.add('is-invalid');
+            input.focus();
+        }
+        if (feedback) {
+            feedback.style.display = 'block';
+        }
         return;
     }
     var form = document.getElementById('spotaward-audit-delete-form');
@@ -378,6 +424,36 @@ function localSpotawardSubmitDeleteAll() {
     form.appendChild(action);
     form.submit();
 }
+
+document.addEventListener('DOMContentLoaded', function() {
+    var modal = document.getElementById('spotaward-deleteall-modal');
+    var input = document.getElementById('spotaward-deleteall-input');
+    if (modal) {
+        modal.addEventListener('click', function(e) {
+            if (e.target === modal) {
+                localSpotawardCloseDeleteAll();
+            }
+        });
+    }
+    if (input) {
+        input.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                localSpotawardSubmitDeleteAll();
+            }
+        });
+        input.addEventListener('input', function() {
+            input.classList.remove('is-invalid');
+            var feedback = document.getElementById('spotaward-deleteall-feedback');
+            if (feedback) feedback.style.display = 'none';
+        });
+    }
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape' && modal && modal.classList.contains('is-open')) {
+            localSpotawardCloseDeleteAll();
+        }
+    });
+});
 ");
 
     echo local_spotaward_render_data_table($columns, $rows, [
