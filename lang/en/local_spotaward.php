@@ -499,6 +499,9 @@ $string['graderange'] = 'Grade range';
 $string['studentscount'] = 'Students';
 $string['suggestedstudents'] = 'Suggested students';
 $string['suggestedbadge'] = 'Suggested';
+$string['pageaverage'] = 'Page average';
+$string['pagecompletion'] = 'Page completion';
+$string['pagescopedhint'] = 'Metrics and performer lists below reflect the {$a} students on the current page.';
 $string['signature_font_setting'] = 'Signature Font';
 $string['signature_font_setting_desc'] = 'Select the font style to use for signatures on the certificates.';
 

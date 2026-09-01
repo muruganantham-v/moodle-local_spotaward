@@ -1959,12 +1959,24 @@ function local_spotaward_render_student_report_content(stdClass $student, stdCla
  */
 function local_spotaward_render_course_report_content(stdClass $course, array $report): string {
     $insights = local_spotaward_build_course_report_insights($report);
+    $totalstudents = (int)($report['studentcount'] ?? 0);
+    $pagestudentscount = count($report['rowsbystudent'] ?? []);
+    $ispaginated = $totalstudents > $pagestudentscount;
+
+    $averagelabel = $ispaginated ? get_string('pageaverage', 'local_spotaward') : get_string('overallaverage', 'local_spotaward');
+    $completionlabel = $ispaginated ? get_string('pagecompletion', 'local_spotaward') : get_string('overallcompletion', 'local_spotaward');
 
     $output = '';
     $output .= html_writer::tag('h4', format_string($course->fullname), ['class' => 'spotaward-section-title']);
+    if ($ispaginated) {
+        $output .= html_writer::div(
+            get_string('pagescopedhint', 'local_spotaward', $pagestudentscount),
+            'alert alert-info py-2 mb-3'
+        );
+    }
     $output .= local_spotaward_render_report_metric_cards([
         [
-            'value' => (int)($report['studentcount'] ?? 0),
+            'value' => $totalstudents,
             'label' => get_string('students', 'local_spotaward'),
         ],
         [
@@ -1974,12 +1986,12 @@ function local_spotaward_render_course_report_content(stdClass $course, array $r
         ],
         [
             'value' => local_spotaward_report_format_percentage($insights['overallscore']),
-            'label' => get_string('overallaverage', 'local_spotaward'),
+            'label' => $averagelabel,
             'class' => 'is-danger',
         ],
         [
             'value' => local_spotaward_report_format_percentage($insights['overallcompletion']),
-            'label' => get_string('overallcompletion', 'local_spotaward'),
+            'label' => $completionlabel,
             'class' => 'is-partial',
         ],
     ]);
